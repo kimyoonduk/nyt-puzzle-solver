@@ -1,23 +1,11 @@
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 import json
 from pathlib import Path
 
-resource_dir = "resources"
-word_file = "wordlist-20210729.txt"
-input_file = "strands_input.json"
+from util.trie import build_trie
 
-word_path = Path(resource_dir, word_file)
-input_path = Path(resource_dir, input_file)
-
-with open(word_path, "r") as f:
-    word_list = f.read().splitlines()
-
-with open(input_path, "r") as f:
-    input_data = json.load(f)
-
-big_input = input_data["big"]
-small_input = input_data["small"]
+DIRECTIONS = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]
 
 
 def filter_words_by_char_count(matrix, word_list):
@@ -39,10 +27,9 @@ def get_adjacent_pairs(matrix):
     m = len(matrix[0])
     pairs = set()
 
-    directions = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]
     for i in range(n):
         for j in range(m):
-            for dx, dy in directions:
+            for dx, dy in DIRECTIONS:
                 ni, nj = i + dx, j + dy
                 if 0 <= ni < n and 0 <= nj < m:
                     pairs.add((matrix[i][j], matrix[ni][nj]))
@@ -85,44 +72,6 @@ def optimize_word_list(matrix, word_list):
     return word_list
 
 
-class TrieNode:
-    def __init__(self):
-        self.children = {}
-        self.is_end_of_word = False
-
-
-class Trie:
-    def __init__(self):
-        self.root = TrieNode()
-
-    def insert(self, word):
-        node = self.root
-        for char in word:
-            if char not in node.children:
-                node.children[char] = TrieNode()
-            node = node.children[char]
-        node.is_end_of_word = True
-
-    def search_prefix(self, prefix):
-        node = self.root
-        for char in prefix:
-            if char not in node.children:
-                return None
-            node = node.children[char]
-        return node
-
-    def search_word(self, word):
-        node = self.search_prefix(word)
-        return node is not None and node.is_end_of_word
-
-
-def build_trie(word_list):
-    trie = Trie()
-    for word in word_list:
-        trie.insert(word)
-    return trie
-
-
 def is_spangram(path, n, m):
     touches_top = any(x == 0 for x, y in path)
     touches_bottom = any(x == n - 1 for x, y in path)
@@ -138,28 +87,142 @@ def path_to_bitmask(path, n, m):
     return bitmask
 
 
-def find_all_covering_paths(bitmasks, span_bitmasks, n, m):
+def get_bitmasks(path_list, n, m):
+
+    bitmask_path_dict = defaultdict(list)
+    bitmasks = set()
+
+    for path in path_list:
+        bitmask = path_to_bitmask(path, n, m)
+        bitmasks.add(bitmask)
+        bitmask_path_dict[bitmask].append(path)
+
+    bitmask_list = list(bitmasks)
+
+    return bitmask_list, bitmask_path_dict
+
+
+def find_all_covering_paths(all_paths, span_paths, n, m):
+
+    # Convert paths to bitmasks
+    bitmask_list, bitmask_path_dict = get_bitmasks(all_paths, n, m)
+    spanmask_list, spanmask_path_dict = get_bitmasks(span_paths, n, m)
+
+    print(f"span bitmasks: {len(spanmask_list)}")
+    print(f"regular bitmasks: {len(bitmask_list)}")
+
     full_cover = (1 << (n * m)) - 1  # Bitmask with all nodes covered
     all_solutions = []
 
     def backtrack(current_cover, path_index, selected_paths):
+
         if current_cover == full_cover:
             all_solutions.append(selected_paths[:])
+            if len(all_solutions) % 10 == 0:
+                print(len(all_solutions))
+
             return
 
-        for i in range(path_index, len(bitmasks)):
-            if current_cover & bitmasks[i] == 0:  # No overlap
+        for i in range(path_index, len(bitmask_list)):
+            if current_cover & bitmask_list[i] == 0:  # No overlap
                 selected_paths.append(i)
-                backtrack(current_cover | bitmasks[i], i + 1, selected_paths)
+                backtrack(current_cover | bitmask_list[i], i + 1, selected_paths)
                 selected_paths.pop()
 
     # Try each spangram path as the starting point
-    for i, span_bitmask in enumerate(span_bitmasks):
+    for i, span_bitmask in enumerate(spanmask_list):
         backtrack(span_bitmask, 0, [i])
 
-    return all_solutions
+    solution_path_list = []
+
+    for solution in all_solutions:
+        solution_path = []
+        span_idx = solution[0]
+        span_path = spanmask_path_dict[spanmask_list[span_idx]]
+        solution_path.append(span_path)
+        for idx in solution[1:]:
+            solution_path.append(bitmask_path_dict[bitmask_list[idx]])
+        solution_path_list.append(solution_path)
+
+    return solution_path_list
 
 
+def bitmask_to_paths(bitmask):
+    paths = []
+    i = 0
+    while bitmask > 0:
+        if bitmask & 1:
+            paths.append(i)
+        bitmask >>= 1
+        i += 1
+    return paths
+
+
+def find_all_covering_paths_track(all_paths, span_paths, n, m):
+
+    # Convert paths to bitmasks
+    bitmask_list, bitmask_path_dict = get_bitmasks(all_paths, n, m)
+    spanmask_list, spanmask_path_dict = get_bitmasks(span_paths, n, m)
+    combined_path_dict = {**bitmask_path_dict, **spanmask_path_dict}
+
+    print(f"span bitmasks: {len(spanmask_list)}")
+    print(f"regular bitmasks: {len(bitmask_list)}")
+
+    full_cover = (1 << (n * m)) - 1  # Bitmask with all nodes covered
+    all_solutions = []
+
+    explored_combination = set()
+
+    combined_bitmasks = spanmask_list + bitmask_list
+    num_spans = len(spanmask_list)
+
+    if num_spans == 0:
+        print("No spangrams found")
+        return []
+
+    def backtrack(current_cover, current_combination):
+
+        if current_combination in explored_combination:
+            return
+        # Mark the combination as explored
+        explored_combination.add(current_combination)
+
+        if current_cover == full_cover:
+            all_solutions.append(current_combination)
+
+            if len(all_solutions) % 10 == 0:
+                print(len(all_solutions))
+            return
+
+        for i in range(num_spans, len(combined_bitmasks)):
+            next_combination = current_combination | (1 << i)
+
+            if current_cover & combined_bitmasks[i] == 0:  # No overlap
+                backtrack(current_cover | combined_bitmasks[i], next_combination)
+
+    # Try each spangram path as the starting point
+    for i, span_bitmask in enumerate(spanmask_list):
+        # begin after spangrams
+        backtrack(span_bitmask, 1 << i)
+
+    solution_path_list = []
+
+    for solution in all_solutions:
+        mask_idx_list = bitmask_to_paths(solution)
+        solution_path = [
+            combined_path_dict[combined_bitmasks[i]] for i in mask_idx_list
+        ]
+        solution_path_list.append(solution_path)
+
+    return solution_path_list
+
+
+def path_to_word(path, matrix):
+    return "".join(matrix[x][y] for x, y in path)
+
+
+# matrix: List[List[str]] of size n x m
+# word_list: List[str]
 def get_all_words(matrix, word_list):
 
     word_list = optimize_word_list(matrix, word_list)
@@ -173,36 +236,21 @@ def get_all_words(matrix, word_list):
     print(f"building trie: {len(word_list)} words")
     trie = build_trie(word_list)
     print(f"trie built: {time.time() - start_time:.4f}s")
-    all_words = []
     all_paths = []
-    span_words = []
     span_paths = []
     visited = [[False for _ in range(m)] for _ in range(n)]
 
     def dfs(x, y, path, current_word, current_node):
         if len(current_word) >= 4 and current_node.is_end_of_word:
-            all_words.append(current_word)
-            all_paths.append(path)
-
             if is_spangram(path, n, m):
-                span_words.append(current_word)
                 span_paths.append(path)
+            else:
+                all_paths.append(path)
 
         if len(current_word) > longest_len:
             return
 
-        directions = [
-            (-1, 0),
-            (1, 0),
-            (0, -1),
-            (0, 1),
-            (-1, -1),
-            (-1, 1),
-            (1, -1),
-            (1, 1),
-        ]
-
-        for dx, dy in directions:
+        for dx, dy in DIRECTIONS:
             nx, ny = x + dx, y + dy
             if 0 <= nx < n and 0 <= ny < m and not visited[nx][ny]:
                 next_char = matrix[nx][ny]
@@ -226,38 +274,58 @@ def get_all_words(matrix, word_list):
                 visited[i][j] = False
 
     print(
-        f"found {len(all_words)} words and {len(span_words)} spangrams: {time.time() - start_time:.4f}s"
+        f"found {len(all_paths)} words and {len(span_paths)} spangrams: {time.time() - start_time:.4f}s"
     )
 
-    # Convert paths to bitmasks
-    bitmasks = [path_to_bitmask(path, n, m) for path in all_paths]
-    span_bitmasks = [path_to_bitmask(path, n, m) for path in span_paths]
+    return all_paths, span_paths
 
-    solutions = []
 
-    cover_list = find_all_covering_paths(bitmasks, span_bitmasks, n, m)
-    if len(cover_list) > 0:
-
-        for covering_idx in cover_list:
-            covering_words = [span_words[covering_idx[0]]]
-            covering_paths = [span_paths[covering_idx[0]]]
-
-            covering_words += [all_words[i] for i in covering_idx[1:]]
-            covering_paths += [all_paths[i] for i in covering_idx[1:]]
-
-            solutions.append((covering_words, covering_paths))
-
-        print(f"found {len(solutions)} covering paths: {time.time() - start_time:.4f}s")
-
-    else:
-        print(f"no covering paths: {time.time() - start_time:.4f}s")
-
-    return solutions
+def cover_to_word(cover, matrix):
+    return [[path_to_word(path, matrix) for path in path_list] for path_list in cover]
 
 
 def __main__():
 
-    solutions = get_all_words(small_input, word_list)
+    resource_dir = "resources"
+    word_file = "wordlist-20210729.txt"
+    # word_file = "wordlist-v2.txt"
+    input_file = "strands_input.json"
+
+    word_path = Path(resource_dir, word_file)
+    input_path = Path(resource_dir, input_file)
+
+    with open(word_path, "r") as f:
+        word_list = f.read().splitlines()
+
+    with open(input_path, "r") as f:
+        input_data = json.load(f)
+
+    big_input = input_data["big"]
+    small_input = input_data["small"]
+
+    solution_size = 9
+
+    matrix = big_input
+    matrix = small_input
+
+    all_paths, span_paths = get_all_words(matrix, word_list)
+
+    n = len(matrix)
+    m = len(matrix[0])
+
+    start_time = time.time()
+    cover_list = find_all_covering_paths(all_paths, span_paths, n, m)
+    print(f"found {len(cover_list)} covering paths: {time.time() - start_time:.4f}s")
+
+    cover_list[0]
+    cover_to_word(cover_list[37], matrix)
+
+    start_time = time.time()
+    cover_list = find_all_covering_paths_track(all_paths, span_paths, n, m)
+    print(f"found {len(cover_list)} covering paths: {time.time() - start_time:.4f}s")
+
+    cover_list[0]
+    cover_to_word(cover_list[37], matrix)
 
     """
     Word List Length: 198422

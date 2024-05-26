@@ -1,2 +1,3 @@
 *.code-workspace
 resources/
+**/__pycache__/
