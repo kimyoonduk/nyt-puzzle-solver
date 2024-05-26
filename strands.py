@@ -1,31 +1,23 @@
 import time
 from collections import Counter
+import json
+from pathlib import Path
 
-# 8x6 matrix
-big_input = [
-    ["T", "E", "P", "H", "L", "A"],
-    ["E", "M", "A", "O", "I", "C"],
-    ["R", "I", "O", "M", "R", "H"],
-    ["K", "L", "P", "E", "S", "I"],
-    ["S", "A", "E", "H", "L", "S"],
-    ["E", "O", "N", "O", "L", "T"],
-    ["I", "T", "O", "E", "Y", "A"],
-    ["M", "E", "M", "S", "E", "K"],
-]
+resource_dir = "resources"
+word_file = "wordlist-20210729.txt"
+input_file = "strands_input.json"
 
-# 5x4 matrix
-small_input = [
-    ["B", "A", "N", "A"],
-    ["N", "A", "I", "T"],
-    ["F", "R", "U", "L"],
-    ["E", "I", "E", "P"],
-    ["M", "L", "A", "P"],
-]
-
-word_path = "wordlist-20210729.txt"
+word_path = Path(resource_dir, word_file)
+input_path = Path(resource_dir, input_file)
 
 with open(word_path, "r") as f:
     word_list = f.read().splitlines()
+
+with open(input_path, "r") as f:
+    input_data = json.load(f)
+
+big_input = input_data["big"]
+small_input = input_data["small"]
 
 
 def filter_words_by_char_count(matrix, word_list):

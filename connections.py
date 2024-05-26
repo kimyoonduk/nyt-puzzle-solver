@@ -7,6 +7,13 @@ import gensim.downloader as api
 
 import numpy as np
 from sklearn.cluster import KMeans
+import json
+from pathlib import Path
+
+import numpy as np
+from sklearn.metrics import silhouette_score
+from scipy.spatial import ConvexHull
+import time
 
 
 def modified_kmeans(model, word_list, K=4):
@@ -40,46 +47,6 @@ def modified_kmeans(model, word_list, K=4):
     return string_clusters
 
 
-path_w2v = api.load("word2vec-google-news-300", return_path=True)
-print(path_w2v)
-model_w2v = KeyedVectors.load_word2vec_format(path_w2v, binary=True)
-
-path_glove_wiki = api.load("glove-wiki-gigaword-300", return_path=True)
-print(path_glove_wiki)
-
-word_list = [
-    "auto",
-    "shells",
-    "shoulders",
-    "intercoms",
-    "head",
-    "pares",
-    "wheels",
-    "caffeine",
-    "shucks",
-    "knees",
-    "bees",
-    "peels",
-    "gossip",
-    "ride",
-    "whip",
-    "toes",
-]
-
-
-model = model_w2v
-
-
-# Perform modified K-means clustering
-clusters = modified_kmeans(model, word_list, K=4)
-
-
-import numpy as np
-from sklearn.metrics import silhouette_score
-from scipy.spatial import ConvexHull
-import time
-
-
 def measure_avg_cosine_similarity(model, clusters, verbose=False):
     avg_cosine_similarities = []
     start_time = time.time()
@@ -106,9 +73,6 @@ def measure_avg_cosine_similarity(model, clusters, verbose=False):
             print(f"ACS {i + 1}: {cluster}: {avg_cosine_similarities[i]:.4f}")
 
     return avg_cosine_similarities
-
-
-measure_avg_cosine_similarity(model, clusters, True)
 
 
 def measure_centroid_similarity(model, clusters, verbose=False):
@@ -141,9 +105,6 @@ def measure_centroid_similarity(model, clusters, verbose=False):
     return centroid_similarities
 
 
-measure_centroid_similarity(model, clusters, True)
-
-
 def measure_convex_hull(model, clusters, verbose=False):
     quadrangle_areas = []
 
@@ -174,9 +135,6 @@ def measure_convex_hull(model, clusters, verbose=False):
     return quadrangle_areas
 
 
-measure_convex_hull(model, clusters, True)
-
-
 def measure_silhouette_score(model, clusters, verbose=False):
     start_time = time.time()
 
@@ -199,7 +157,36 @@ def measure_silhouette_score(model, clusters, verbose=False):
     return silhouette_scores
 
 
-measure_silhouette_score(model, clusters, True)
+def __main__():
+
+    resource_dir = "resources"
+    word_file = "wordlist-20210729.txt"
+    input_file = "strands_input.json"
+
+    with open(Path(resource_dir, word_file), "r") as f:
+        word_list = f.read().splitlines()
+
+    with open(Path(resource_dir, input_file), "r") as f:
+        input_data = json.load(f)
+
+    path_w2v = api.load("word2vec-google-news-300", return_path=True)
+    print(path_w2v)
+    model_w2v = KeyedVectors.load_word2vec_format(path_w2v, binary=True)
+
+    path_glove_wiki = api.load("glove-wiki-gigaword-300", return_path=True)
+    print(path_glove_wiki)
+
+    model = model_w2v
+
+    input_words = input_data["words"]
+
+    # Perform modified K-means clustering
+    clusters = modified_kmeans(model, input_words, K=4)
+    measure_avg_cosine_similarity(model, clusters, True)
+    measure_centroid_similarity(model, clusters, True)
+    measure_convex_hull(model, clusters, True)
+
+    measure_silhouette_score(model, clusters, True)
 
 
 #
