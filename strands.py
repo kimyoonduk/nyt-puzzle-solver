@@ -107,6 +107,9 @@ def find_all_covering_paths(all_paths, span_paths, n, m):
     # Convert paths to bitmasks
     bitmask_list, bitmask_path_dict = get_bitmasks(all_paths, n, m)
     spanmask_list, spanmask_path_dict = get_bitmasks(span_paths, n, m)
+    combined_bitmasks = spanmask_list + bitmask_list
+    combined_path_dict = {**bitmask_path_dict, **spanmask_path_dict}
+    num_spans = len(spanmask_list)
 
     print(f"span bitmasks: {len(spanmask_list)}")
     print(f"regular bitmasks: {len(bitmask_list)}")
@@ -123,25 +126,20 @@ def find_all_covering_paths(all_paths, span_paths, n, m):
 
             return
 
-        for i in range(path_index, len(bitmask_list)):
-            if current_cover & bitmask_list[i] == 0:  # No overlap
+        for i in range(path_index, len(combined_bitmasks)):
+            if current_cover & combined_bitmasks[i] == 0:  # No overlap
                 selected_paths.append(i)
-                backtrack(current_cover | bitmask_list[i], i + 1, selected_paths)
+                backtrack(current_cover | combined_bitmasks[i], i + 1, selected_paths)
                 selected_paths.pop()
 
     # Try each spangram path as the starting point
     for i, span_bitmask in enumerate(spanmask_list):
-        backtrack(span_bitmask, 0, [i])
+        backtrack(span_bitmask, num_spans, [i])
 
     solution_path_list = []
 
     for solution in all_solutions:
-        solution_path = []
-        span_idx = solution[0]
-        span_path = spanmask_path_dict[spanmask_list[span_idx]]
-        solution_path.append(span_path)
-        for idx in solution[1:]:
-            solution_path.append(bitmask_path_dict[bitmask_list[idx]])
+        solution_path = [combined_path_dict[combined_bitmasks[idx]] for idx in solution]
         solution_path_list.append(solution_path)
 
     return solution_path_list
@@ -163,6 +161,7 @@ def find_all_covering_paths_track(all_paths, span_paths, n, m):
     # Convert paths to bitmasks
     bitmask_list, bitmask_path_dict = get_bitmasks(all_paths, n, m)
     spanmask_list, spanmask_path_dict = get_bitmasks(span_paths, n, m)
+    combined_bitmasks = spanmask_list + bitmask_list
     combined_path_dict = {**bitmask_path_dict, **spanmask_path_dict}
 
     print(f"span bitmasks: {len(spanmask_list)}")
@@ -172,8 +171,6 @@ def find_all_covering_paths_track(all_paths, span_paths, n, m):
     all_solutions = []
 
     explored_combination = set()
-
-    combined_bitmasks = spanmask_list + bitmask_list
     num_spans = len(spanmask_list)
 
     if num_spans == 0:
