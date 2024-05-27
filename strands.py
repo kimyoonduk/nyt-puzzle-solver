@@ -391,10 +391,79 @@ def bitmask_to_matrix(bitmask, n, m):
         print()
 
 
+# count number of 1s in bitmask
+def count_set_bits(x):
+    count = 0
+    while x:
+        x &= x - 1  # Remove the rightmost set bit
+        count += 1
+    return count
+
+
+# bitmask version of dfs
+def dfs_bitmask(input_bm, n, m, min_zone_size=4):
+    # bitmask to track visited nodes
+    visited = 0
+    clusters = []
+
+    def dfs(start, visited):
+        stack = [start]
+        # initialize bitmask for cluster
+        cluster = 0
+        while stack:
+            pos = stack.pop()
+            if not (visited & (1 << pos)):
+                visited |= 1 << pos
+                cluster |= 1 << pos
+
+                # get "coordinates"
+                x, y = divmod(pos, m)
+                for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    nx, ny = x + dx, y + dy
+                    if 0 <= nx < n and 0 <= ny < m:
+                        npos = nx * m + ny
+                        if (input_bm & (1 << npos)) and not (visited & (1 << npos)):
+                            stack.append(npos)
+        return cluster, visited
+
+    for i in range(n * m):
+        # if node is part of input_bm and not visited
+        if (input_bm & (1 << i)) and not (visited & (1 << i)):
+            cluster, visited = dfs(i, visited)
+            if count_set_bits(cluster) >= min_zone_size:
+                clusters.append(cluster)
+            else:
+                print(f"Cluster too small: {count_set_bits(cluster)}")
+                return []
+
+    return clusters
+
+
+def divide_board_into_zones_bm(span_bitmask, n, m, min_zone_size=4):
+    full_cover = (1 << (n * m)) - 1  # Bitmask with all nodes covered
+    available = full_cover & ~span_bitmask
+
+    clusters = dfs_bitmask(available, n, m)
+
+    if len(clusters) == 0:
+        print("No available zone clusters")
+        return []
+
+    # check if any clusters are too small
+    for cluster in clusters:
+        if count_set_bits(cluster) < min_zone_size:
+            print(
+                f"Cluster too small: {count_set_bits(cluster)}. Returning empty zones"
+            )
+            return []
+
+    return clusters
+
+
 def backtrack_zone(
     current_cover,
     bm_list,
-    solution_array,
+    solution_set,
     solution_mask,
     valid,
     combined_bitmasks,
@@ -403,7 +472,7 @@ def backtrack_zone(
 
     if current_cover == solution_mask:
         print("SOLUTION FOUND")
-        solution_array.append(bm_list[:])
+        solution_set.add(frozenset(bm_list[:]))
         return
 
     new_valid_idx_list = get_valid_bm_idx(valid, bm_list, valid_mask)
@@ -413,7 +482,7 @@ def backtrack_zone(
             backtrack_zone(
                 current_cover | combined_bitmasks[i],
                 bm_list,
-                solution_array,
+                solution_set,
                 solution_mask,
                 valid,
                 combined_bitmasks,
@@ -452,7 +521,7 @@ def find_all_covering_paths_zone(all_paths, span_paths, n, m, solution_size):
         print(f"Span {span_idx} valid count: {len(valid_idx_list)}")
 
         # divide board into two zones
-        zonemask_list = divide_board_into_zones(span_bitmask, n, m)
+        zonemask_list = divide_board_into_zones_bm(span_bitmask, n, m)
 
         # if span_idx == 81:
         #     print(f"Span {span_idx}")
@@ -475,10 +544,20 @@ def find_all_covering_paths_zone(all_paths, span_paths, n, m, solution_size):
                     zone_bitmasks[zone_idx].append(bm_idx)
                     break
 
-        # sort zone_bitmask by size in ascending order
-        zone_bitmasks.sort(key=len)
+        # sort zonemask_list and zone_bitmasks by size of zone_bitmask in ascending order
+        paired_zones = list(zip(zone_bitmasks, zonemask_list))
 
-        zone_solutions = [[] for _ in range(len(zonemask_list))]
+        # sort paired_zones by the size of zone_bitmasks
+        paired_zones.sort(key=lambda pair: len(pair[0]))
+
+        # unzip the sorted pairs
+        zone_bitmasks, zonemask_list = zip(*paired_zones)
+
+        # convert the zip objects back to lists
+        zone_bitmasks = list(zone_bitmasks)
+        zonemask_list = list(zonemask_list)
+
+        zone_solutions = [set() for _ in range(len(zonemask_list))]
         span_has_solution = True
 
         print(f"{len(zone_bitmasks)} zones")
@@ -500,11 +579,11 @@ def find_all_covering_paths_zone(all_paths, span_paths, n, m, solution_size):
             if len(zone_solutions[zone_idx]) == 0:
                 print(f"Span {span_idx}, Zone {zone_idx} has no solution")
 
-                # if span_idx == 81:
-                #     bitmask_to_matrix(zonemask_list[zone_idx], n, m)
-                #     for i in path_bitmask_list:
-                #         print(f"Path {i}")
-                #         bitmask_to_matrix(combined_bitmasks[i], n, m)
+                if span_idx == 81:
+                    bitmask_to_matrix(zonemask_list[zone_idx], n, m)
+                    for i in path_bitmask_list:
+                        print(f"Path {i}")
+                        bitmask_to_matrix(combined_bitmasks[i], n, m)
 
                 span_has_solution = False
                 break
@@ -514,7 +593,7 @@ def find_all_covering_paths_zone(all_paths, span_paths, n, m, solution_size):
 
         # combine zone solutions
         span_solutions = []
-        for zone_idx, zone_solution in enumerate(zone_solutions):
+        for zone_idx, zone_solution in enumerate(list(zone_solutions)):
             span_solutions.append({zone_idx: zone_solution})
 
         if len(span_solutions) > 0:
@@ -704,8 +783,8 @@ def __main__():
     print(f"Word paths found: {len(all_words)}")
     print(f"Span paths found: {len(span_words)}")
 
-    for i, span in enumerate(span_paths):
-        print(f"Span {i}: {path_to_word(span, matrix)}")
+    # for i, span in enumerate(span_paths):
+    #     print(f"Span {i}: {path_to_word(span, matrix)}")
 
     n = len(matrix)
     m = len(matrix[0])
@@ -725,7 +804,7 @@ def __main__():
     )
     print(f"found {len(cover_list)} covering paths: {time.time() - start_time:.4f}s")
 
-    cover_list[0]
+    cover_list[1]
 
     for cover in cover_list:
         print(cover_to_word(cover, matrix))
