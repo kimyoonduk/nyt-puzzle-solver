@@ -50,6 +50,43 @@ def filter_words_by_adjacent_pairs(word_list, valid_pairs):
     return [word for word in word_list if not has_invalid_pairs(word)]
 
 
+def get_valid_sequences(matrix, length):
+    n = len(matrix)
+    m = len(matrix[0])
+    sequences = set()
+
+    def dfs(x, y, current_sequence):
+        if len(current_sequence) == length:
+            sequences.add(tuple(current_sequence))
+            return
+
+        for dx, dy in DIRECTIONS:
+            ni, nj = x + dx, y + dy
+            if 0 <= ni < n and 0 <= nj < m:
+                dfs(ni, nj, current_sequence + [matrix[ni][nj]])
+
+    for i in range(n):
+        for j in range(m):
+            dfs(i, j, [matrix[i][j]])
+
+    return sequences
+
+
+def filter_words_by_valid_sequences(word_list, matrix, max_length=5):
+    filtered_words = word_list.copy()
+    for length in range(2, max_length + 1):  # Adjust the range as needed
+        current_valid_sequences = get_valid_sequences(matrix, length)
+        filtered_words = [
+            word
+            for word in filtered_words
+            if not any(
+                tuple(word[i : i + length]) not in current_valid_sequences
+                for i in range(len(word) - length + 1)
+            )
+        ]
+    return filtered_words
+
+
 def optimize_word_list(matrix, word_list):
 
     print(f"Word List Length: {len(word_list)}")
@@ -66,6 +103,8 @@ def optimize_word_list(matrix, word_list):
     # Filter words based on adjacent character pairs
     valid_pairs = get_adjacent_pairs(matrix)
     word_list = filter_words_by_adjacent_pairs(word_list, valid_pairs)
+
+    # word_list = filter_words_by_valid_sequences(word_list, matrix)
 
     print(f"Optimized Word List Length: {len(word_list)}")
 
@@ -102,6 +141,43 @@ def get_bitmasks(path_list, n, m):
     return bitmask_list, bitmask_path_dict
 
 
+# can be defined as two lines having one solution
+def check_crossing_seg(seg1, seg2):
+    (ax1, ay1), (ax2, ay2) = seg1
+    (bx1, by1), (bx2, by2) = seg2
+
+    # Coefficients of linear equations
+    A1 = ax2 - ax1
+    A2 = ay2 - ay1
+    B1 = bx1 - bx2
+    B2 = by1 - by2
+    C1 = bx1 - ax1
+    C2 = by1 - ay1
+
+    # Determinant
+    D = A1 * B2 - A2 * B1
+
+    if D == 0:
+        return False  # Parallel or collinear segments
+
+    # Calculate parameters t and s using Cramer's rule
+    t = (C1 * B2 - C2 * B1) / D
+    s = (A1 * C2 - A2 * C1) / D
+
+    # print(t, s)
+
+    return 0 < t < 1 and 0 < s < 1  # Intersection inside both segments
+
+
+def check_crossing_path(path1, path2):
+    for i in range(len(path1) - 1):
+        for j in range(len(path2) - 1):
+            if check_crossing_seg((path1[i], path1[i + 1]), (path2[j], path2[j + 1])):
+                return True
+
+    return False
+
+
 def find_all_covering_paths(all_paths, span_paths, n, m):
 
     # Convert paths to bitmasks
@@ -118,11 +194,10 @@ def find_all_covering_paths(all_paths, span_paths, n, m):
     all_solutions = []
 
     def backtrack(current_cover, path_index, selected_paths):
+        # print(selected_paths)
 
         if current_cover == full_cover:
             all_solutions.append(selected_paths[:])
-            if len(all_solutions) % 10 == 0:
-                print(len(all_solutions))
 
             return
 
@@ -134,7 +209,49 @@ def find_all_covering_paths(all_paths, span_paths, n, m):
 
     # Try each spangram path as the starting point
     for i, span_bitmask in enumerate(spanmask_list):
-        backtrack(span_bitmask, num_spans, [i])
+        backtrack(span_bitmask, 0, [i])
+
+    solution_path_list = []
+
+    for solution in all_solutions:
+        solution_path = [combined_path_dict[combined_bitmasks[idx]] for idx in solution]
+        solution_path_list.append(solution_path)
+
+    return solution_path_list
+
+
+def find_all_covering_paths_zone(all_paths, span_paths, n, m):
+
+    # Convert paths to bitmasks
+    bitmask_list, bitmask_path_dict = get_bitmasks(all_paths, n, m)
+    spanmask_list, spanmask_path_dict = get_bitmasks(span_paths, n, m)
+    combined_bitmasks = spanmask_list + bitmask_list
+    combined_path_dict = {**bitmask_path_dict, **spanmask_path_dict}
+    num_spans = len(spanmask_list)
+
+    print(f"span bitmasks: {len(spanmask_list)}")
+    print(f"regular bitmasks: {len(bitmask_list)}")
+
+    full_cover = (1 << (n * m)) - 1  # Bitmask with all nodes covered
+    all_solutions = []
+
+    def backtrack(current_cover, path_index, selected_paths):
+        # print(selected_paths)
+
+        if current_cover == full_cover:
+            all_solutions.append(selected_paths[:])
+
+            return
+
+        for i in range(path_index, len(combined_bitmasks)):
+            if current_cover & combined_bitmasks[i] == 0:  # No overlap
+                selected_paths.append(i)
+                backtrack(current_cover | combined_bitmasks[i], i + 1, selected_paths)
+                selected_paths.pop()
+
+    # Try each spangram path as the starting point
+    for i, span_bitmask in enumerate(spanmask_list):
+        backtrack(span_bitmask, 0, [i])
 
     solution_path_list = []
 
@@ -178,6 +295,7 @@ def find_all_covering_paths_track(all_paths, span_paths, n, m):
         return []
 
     def backtrack(current_cover, current_combination):
+        # print(bitmask_to_paths(current_combination))
 
         if current_combination in explored_combination:
             return
@@ -187,11 +305,11 @@ def find_all_covering_paths_track(all_paths, span_paths, n, m):
         if current_cover == full_cover:
             all_solutions.append(current_combination)
 
-            if len(all_solutions) % 10 == 0:
-                print(len(all_solutions))
-            return
+            # if len(all_solutions) % 10 == 0:
+            # print(len(all_solutions))
+            # return
 
-        for i in range(num_spans, len(combined_bitmasks)):
+        for i in range(len(combined_bitmasks)):
             next_combination = current_combination | (1 << i)
 
             if current_cover & combined_bitmasks[i] == 0:  # No overlap
@@ -220,7 +338,7 @@ def path_to_word(path, matrix):
 
 # matrix: List[List[str]] of size n x m
 # word_list: List[str]
-def get_all_words(matrix, word_list):
+def get_all_words(matrix, word_list, verbose=False):
 
     word_list = optimize_word_list(matrix, word_list)
 
@@ -230,9 +348,11 @@ def get_all_words(matrix, word_list):
     longest_len = len(max(word_list, key=len))
 
     start_time = time.time()
-    print(f"building trie: {len(word_list)} words")
+    if verbose:
+        print(f"building trie: {len(word_list)} words")
     trie = build_trie(word_list)
-    print(f"trie built: {time.time() - start_time:.4f}s")
+    if verbose:
+        print(f"trie built: {time.time() - start_time:.4f}s")
     all_paths = []
     span_paths = []
     visited = [[False for _ in range(m)] for _ in range(n)]
@@ -249,7 +369,10 @@ def get_all_words(matrix, word_list):
 
         for dx, dy in DIRECTIONS:
             nx, ny = x + dx, y + dy
-            if 0 <= nx < n and 0 <= ny < m and not visited[nx][ny]:
+
+            crossing = check_crossing_path(path, [(x, y), (nx, ny)])
+
+            if 0 <= nx < n and 0 <= ny < m and not visited[nx][ny] and not crossing:
                 next_char = matrix[nx][ny]
                 if next_char in current_node.children:
                     visited[nx][ny] = True
@@ -270,9 +393,10 @@ def get_all_words(matrix, word_list):
                 dfs(i, j, [(i, j)], start_char, trie.root.children[start_char])
                 visited[i][j] = False
 
-    print(
-        f"found {len(all_paths)} words and {len(span_paths)} spangrams: {time.time() - start_time:.4f}s"
-    )
+    if verbose:
+        print(
+            f"found {len(all_paths)} words and {len(span_paths)} spangrams: {time.time() - start_time:.4f}s"
+        )
 
     return all_paths, span_paths
 
@@ -281,15 +405,23 @@ def cover_to_word(cover, matrix):
     return [[path_to_word(path, matrix) for path in path_list] for path_list in cover]
 
 
+def test():
+
+    print(check_crossing_seg(((0, 0), (1, 1)), ((0, 1), (1, 0))))  # Should return True
+    print(check_crossing_seg(((2, 3), (3, 4)), ((3, 3), (2, 4))))  # Should return True
+    print(check_crossing_seg(((0, 0), (1, 1)), ((3, 4), (3, 5))))  # Should return False
+
+
 def __main__():
 
+    parent_dir = Path(__file__).parent
+
     resource_dir = "resources"
-    word_file = "wordlist-20210729.txt"
-    # word_file = "wordlist-v2.txt"
+    word_file = "wordlist-v4.txt"
     input_file = "strands_input.json"
 
-    word_path = Path(resource_dir, word_file)
-    input_path = Path(resource_dir, input_file)
+    word_path = Path(parent_dir, resource_dir, word_file)
+    input_path = Path(parent_dir, resource_dir, input_file)
 
     with open(word_path, "r") as f:
         word_list = f.read().splitlines()
@@ -306,6 +438,10 @@ def __main__():
     matrix = small_input
 
     all_paths, span_paths = get_all_words(matrix, word_list)
+    all_words = [path_to_word(path, matrix) for path in all_paths]
+    span_words = [path_to_word(path, matrix) for path in span_paths]
+    # print(len(all_words))
+    # print(len(span_words))
 
     n = len(matrix)
     m = len(matrix[0])
@@ -314,15 +450,16 @@ def __main__():
     cover_list = find_all_covering_paths(all_paths, span_paths, n, m)
     print(f"found {len(cover_list)} covering paths: {time.time() - start_time:.4f}s")
 
-    cover_list[0]
-    cover_to_word(cover_list[37], matrix)
-
     start_time = time.time()
     cover_list = find_all_covering_paths_track(all_paths, span_paths, n, m)
     print(f"found {len(cover_list)} covering paths: {time.time() - start_time:.4f}s")
 
-    cover_list[0]
-    cover_to_word(cover_list[37], matrix)
+    # start_time = time.time()
+    # cover_list = find_covering_paths_for_zones(all_paths, span_paths, n, m)
+    # print(f"found {len(cover_list)} covering paths: {time.time() - start_time:.4f}s")
+
+    for cover in cover_list:
+        print(cover_to_word(cover, matrix))
 
     """
     Word List Length: 198422
@@ -332,6 +469,34 @@ def __main__():
     found 417 words and 87 spangrams: 0.0020s
     found 298 covering paths: 0.5721s
     """
+
+    """
+    # before cross check
+    No tracking
+    Word List Length: 207769
+    Optimized Word List Length: 309
+    span bitmasks: 89
+    regular bitmasks: 250
+    found 58 covering paths: 0.2323s
+
+    # after cross check (revert to using adjacency pairs since performance difference is negligible)
+    Word List Length: 207769
+    Optimized Word List Length: 654
+    span bitmasks: 86
+    regular bitmasks: 233
+    found 41 covering paths: 0.2011s
+    """
+
+    """
+    # before cross check
+    With tracking
+    found 25 covering paths: 1.3840s
+
+    # after cross check
+    found 15 covering paths: 1.1298s    
+    > all versions had correct answer
+    """
+
     len(solutions)  # 298 for 5x4
 
     real_solution = [

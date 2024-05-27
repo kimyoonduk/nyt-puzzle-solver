@@ -1,3 +1,5 @@
 *.code-workspace
 resources/
 **/__pycache__/
+lexicon_update.py
+**/.DS_Store
