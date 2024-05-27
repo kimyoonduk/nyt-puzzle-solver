@@ -249,24 +249,32 @@ def init_valid_matrix(k, combined_bitmasks, combined_path_dict):
     return valid
 
 
-def get_valid_bm_idx(valid, idx_list):
+def get_valid_bm_idx(valid, idx_list, valid_mask=None):
 
     # get AND of valid paths for all idx in idx_list
     if isinstance(idx_list, int):
         idx_list = [idx_list]
 
-    valid_paths = valid[idx_list[0]]
+    # if filtering index is empty, all idx is valid
+    if len(idx_list) == 0:
+        valid_idx = [i for i in range(valid.shape[0])]
+    else:
+        valid_paths = valid[idx_list[0]]
 
-    if len(idx_list) > 1:
-        for idx in idx_list[1:]:
-            valid_paths = np.logical_and(valid_paths, valid[idx])
+        if len(idx_list) > 1:
+            for idx in idx_list[1:]:
+                valid_paths = np.logical_and(valid_paths, valid[idx])
 
-    valid_idx = np.where(valid_paths)[0]
+        valid_idx = np.where(valid_paths)[0]
+
+    # if valid_mask is provided, filter valid_idx with only those that are in valid_mask
+    if valid_mask is not None:
+        valid_idx = [idx for idx in valid_idx if idx in valid_mask]
 
     return valid_idx
 
 
-def divide_board_into_zones(spangram_path, spangram_bm, n, m):
+def divide_board_into_zones_orig(spangram_path, spangram_bm, n, m):
     zone1_mask = 0
     zone2_mask = 0
 
@@ -308,6 +316,57 @@ def divide_board_into_zones(spangram_path, spangram_bm, n, m):
     return zone1_mask, zone2_mask
 
 
+def identify_clusters(coords):
+    visited = set()
+    clusters = []
+
+    def dfs(x, y, cluster):
+        stack = [(x, y)]
+        while stack:
+            cx, cy = stack.pop()
+            if (cx, cy) not in visited:
+                visited.add((cx, cy))
+                cluster.append((cx, cy))
+                for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    nx, ny = cx + dx, cy + dy
+                    if (nx, ny) in coords and (nx, ny) not in visited:
+                        stack.append((nx, ny))
+
+    for x, y in coords:
+        if (x, y) not in visited:
+            cluster = []
+            dfs(x, y, cluster)
+            clusters.append(cluster)
+
+    return clusters
+
+
+# we normally expect a spangram to produce 2 zones, but some may produce 3 or more
+def divide_board_into_zones(span_bitmask, n, m, min_zone_size=4):
+
+    full_cover = (1 << (n * m)) - 1  # Bitmask with all nodes covered
+    available = full_cover & ~span_bitmask
+    avail_coords = bitmask_to_coordinates(available, n, m)
+
+    clusters = identify_clusters(avail_coords)
+
+    if len(clusters) == 0:
+        raise ValueError("No available zone clusters")
+
+    # check if any clusters are too small
+    for cluster in clusters:
+        if len(cluster) < min_zone_size:
+            print(f"Cluster too small: {len(cluster)}. Returning empty zones")
+            return []
+
+    # sort clusters by size in ascending order
+    clusters.sort(key=len)
+
+    zonemask_list, _ = get_bitmasks(clusters, n, m)
+
+    return zonemask_list
+
+
 # for debugging
 def bitmask_to_coordinates(bitmask, n, m):
     coordinates = []
@@ -316,6 +375,51 @@ def bitmask_to_coordinates(bitmask, n, m):
             if bitmask & (1 << (i * m + j)):
                 coordinates.append((i, j))
     return coordinates
+
+
+# print coordinates as 2d n x m matrix marked with 1
+def bitmask_to_matrix(bitmask, n, m):
+    matrix = [["." for _ in range(m)] for _ in range(n)]
+    for i in range(n):
+        for j in range(m):
+            if bitmask & (1 << (i * m + j)):
+                matrix[i][j] = "X"
+
+    for row in matrix:
+        for elem in row:
+            print(f"{elem:4}", end=" ")
+        print()
+
+
+def backtrack_zone(
+    current_cover,
+    bm_list,
+    solution_array,
+    solution_mask,
+    valid,
+    combined_bitmasks,
+    valid_mask,
+):
+
+    if current_cover == solution_mask:
+        print("SOLUTION FOUND")
+        solution_array.append(bm_list[:])
+        return
+
+    new_valid_idx_list = get_valid_bm_idx(valid, bm_list, valid_mask)
+    for i in new_valid_idx_list:
+        if current_cover & combined_bitmasks[i] == 0:
+            bm_list.append(i)
+            backtrack_zone(
+                current_cover | combined_bitmasks[i],
+                bm_list,
+                solution_array,
+                solution_mask,
+                valid,
+                combined_bitmasks,
+                valid_mask,
+            )
+            bm_list.pop()
 
 
 def find_all_covering_paths_zone(all_paths, span_paths, n, m, solution_size):
@@ -329,6 +433,7 @@ def find_all_covering_paths_zone(all_paths, span_paths, n, m, solution_size):
     num_spans = len(spanmask_list)
     k = len(combined_bitmasks)
 
+    print()
     print(f"span bitmasks: {num_spans}")
     print(f"all bitmasks: {k}")
 
@@ -341,92 +446,81 @@ def find_all_covering_paths_zone(all_paths, span_paths, n, m, solution_size):
     for span_idx, span_bitmask in enumerate(spanmask_list):
 
         spangram_path = combined_path_dict[span_bitmask][0]
-        print(f"span {span_idx}: {path_to_word(spangram_path)}")
 
         # get list of valid bitmasks
         valid_idx_list = get_valid_bm_idx(valid, span_idx)
-        print(f"valid count: {len(valid_idx_list)}")
+        print(f"Span {span_idx} valid count: {len(valid_idx_list)}")
 
         # divide board into two zones
-        z1_mask, z2_mask = divide_board_into_zones(spangram_path, span_bitmask, n, m)
+        zonemask_list = divide_board_into_zones(span_bitmask, n, m)
 
-        print(f"z1: {bitmask_to_coordinates(z1_mask, n, m)}")
-        print(f"z2: {bitmask_to_coordinates(z2_mask, n, m)}")
-        print(f"span: {bitmask_to_coordinates(span_bitmask, n, m)}")
+        # if span_idx == 81:
+        #     print(f"Span {span_idx}")
+        #     bitmask_to_matrix(span_bitmask, n, m)
+        #     for i, zonemask in enumerate(zonemask_list):
+        #         print(f"Zone {i}")
+        #         bitmask_to_matrix(zonemask, n, m)
 
-        # assign valid bitmasks to each zone
-        z1_bm = []
-        z2_bm = []
+        if len(zonemask_list) == 0:
+            continue
 
-        span_bitmask = combined_bitmasks[span_idx]
+        zone_bitmasks = [[] for _ in range(len(zonemask_list))]
 
-        # for bm_idx in valid_idx_list:
-        #     bitmask = combined_bitmasks[bm_idx]
-        #     if bitmask & z1_mask:
-        #         z1_bm.append(bm_idx)
-        #     elif bitmask & z2_mask:
-        #         z2_bm.append(bm_idx)
-        #     else:
-        #         # this shouldn't happen if get_valid_bm_idx is working correctly
-        #         raise ValueError("Path does not belong to either zone")
+        # assign path bitmasks to zones
+        for bm_idx in valid_idx_list:
+            bitmask = combined_bitmasks[bm_idx]
 
-        z1_solutions = []
-        z2_solutions = []
+            for zone_idx, zonemask in enumerate(zonemask_list):
+                if bitmask & zonemask:
+                    zone_bitmasks[zone_idx].append(bm_idx)
+                    break
 
-        # TODO: fix zoning and run separately to combine answers later
+        # sort zone_bitmask by size in ascending order
+        zone_bitmasks.sort(key=len)
 
-        def backtrack_zone(current_cover, bm_list, solutions, zone_mask):
+        zone_solutions = [[] for _ in range(len(zonemask_list))]
+        span_has_solution = True
 
-            print(f"current bms: {bm_list}")
+        print(f"{len(zone_bitmasks)} zones")
+        for zone_idx, path_bitmask_list in enumerate(zone_bitmasks):
+            print(f"Zone {zone_idx}: {len(path_bitmask_list)} paths")
 
-            if current_cover == zone_mask:
-                solutions.append(bm_list[:])
-                print(bm_list)
-                return
+        for zone_idx, path_bitmask_list in enumerate(zone_bitmasks):
+            zone_solution_list = zone_solutions[zone_idx]
+            backtrack_zone(
+                0,
+                [],
+                zone_solution_list,
+                zonemask_list[zone_idx],
+                valid,
+                combined_bitmasks,
+                path_bitmask_list,
+            )
+            # if zone does not have solution, skip this spangram
+            if len(zone_solutions[zone_idx]) == 0:
+                print(f"Span {span_idx}, Zone {zone_idx} has no solution")
 
-            new_valid_idx_list = get_valid_bm_idx(valid, bm_list)
-            for i in new_valid_idx_list:
-                if current_cover & combined_bitmasks[i] == 0:
-                    bm_list.append(i)
-                    backtrack_zone(
-                        current_cover | combined_bitmasks[i],
-                        bm_list,
-                        solutions,
-                        zone_mask,
-                    )
-                    bm_list.pop()
+                # if span_idx == 81:
+                #     bitmask_to_matrix(zonemask_list[zone_idx], n, m)
+                #     for i in path_bitmask_list:
+                #         print(f"Path {i}")
+                #         bitmask_to_matrix(combined_bitmasks[i], n, m)
 
-        backtrack_zone(span_bitmask, [span_idx], all_solutions, full_cover)
+                span_has_solution = False
+                break
+
+        if not span_has_solution:
+            continue
+
+        # combine zone solutions
+        span_solutions = []
+        for zone_idx, zone_solution in enumerate(zone_solutions):
+            span_solutions.append({zone_idx: zone_solution})
+
+        if len(span_solutions) > 0:
+            all_solutions.append({span_idx: span_solutions})
 
     return all_solutions
-
-    return z1_bm, z2_bm
-
-    # def backtrack(current_cover, path_index, selected_paths):
-    #     # print(selected_paths)
-
-    #     if current_cover == full_cover:
-    #         all_solutions.append(selected_paths[:])
-
-    #         return
-
-    #     for i in range(path_index, len(combined_bitmasks)):
-    #         if current_cover & combined_bitmasks[i] == 0:  # No overlap
-    #             selected_paths.append(i)
-    #             backtrack(current_cover | combined_bitmasks[i], i + 1, selected_paths)
-    #             selected_paths.pop()
-
-    # # Try each spangram path as the starting point
-    # for i, span_bitmask in enumerate(spanmask_list):
-    #     backtrack(span_bitmask, 0, [i])
-
-    solution_path_list = []
-
-    for solution in all_solutions:
-        solution_path = [combined_path_dict[combined_bitmasks[idx]] for idx in solution]
-        solution_path_list.append(solution_path)
-
-    return solution_path_list
 
 
 def bitmask_to_paths(bitmask):
@@ -607,8 +701,11 @@ def __main__():
     all_paths, span_paths = get_all_words(matrix, word_list)
     all_words = [path_to_word(path, matrix) for path in all_paths]
     span_words = [path_to_word(path, matrix) for path in span_paths]
-    # print(len(all_words))
-    # print(len(span_words))
+    print(f"Word paths found: {len(all_words)}")
+    print(f"Span paths found: {len(span_words)}")
+
+    for i, span in enumerate(span_paths):
+        print(f"Span {i}: {path_to_word(span, matrix)}")
 
     n = len(matrix)
     m = len(matrix[0])
@@ -623,8 +720,12 @@ def __main__():
 
     start_time = time.time()
     # z1_bm, z2_bm = find_all_covering_paths_zone(all_paths, span_paths, n, m)
-    cover_list = find_all_covering_paths_zone(all_paths, span_paths, n, m)
+    cover_list = find_all_covering_paths_zone(
+        all_paths, span_paths, n, m, solution_size
+    )
     print(f"found {len(cover_list)} covering paths: {time.time() - start_time:.4f}s")
+
+    cover_list[0]
 
     for cover in cover_list:
         print(cover_to_word(cover, matrix))
