@@ -2,6 +2,7 @@ import time
 from collections import Counter, defaultdict
 import json
 from pathlib import Path
+import numpy as np
 
 from util.trie import build_trie
 
@@ -220,38 +221,204 @@ def find_all_covering_paths(all_paths, span_paths, n, m):
     return solution_path_list
 
 
-def find_all_covering_paths_zone(all_paths, span_paths, n, m):
+# matrix for checking valid path pairings
+def init_valid_matrix(k, combined_bitmasks, combined_path_dict):
+    valid = np.ones((k, k), dtype=bool)
+    np.fill_diagonal(valid, False)
+
+    # check for overlaps and crossing
+    for i in range(k):
+        for j in range(i + 1, k):
+            bm_i = combined_bitmasks[i]
+            bm_j = combined_bitmasks[j]
+
+            # overlap
+            if bm_i & bm_j:
+                valid[i, j] = False
+                valid[j, i] = False
+
+            # crossing
+            # any path is okay
+            if check_crossing_path(
+                combined_path_dict[bm_i][0],
+                combined_path_dict[bm_j][0],
+            ):
+                valid[i, j] = False
+                valid[j, i] = False
+
+    return valid
+
+
+def get_valid_bm_idx(valid, idx_list):
+
+    # get AND of valid paths for all idx in idx_list
+    if isinstance(idx_list, int):
+        idx_list = [idx_list]
+
+    valid_paths = valid[idx_list[0]]
+
+    if len(idx_list) > 1:
+        for idx in idx_list[1:]:
+            valid_paths = np.logical_and(valid_paths, valid[idx])
+
+    valid_idx = np.where(valid_paths)[0]
+
+    return valid_idx
+
+
+def divide_board_into_zones(spangram_path, spangram_bm, n, m):
+    zone1_mask = 0
+    zone2_mask = 0
+
+    # Determine if the spangram_path spans the x or y dimension
+    spans_x = any(x == 0 for x, y in spangram_path) and any(
+        x == n - 1 for x, y in spangram_path
+    )
+    spans_y = any(y == 0 for x, y in spangram_path) and any(
+        y == m - 1 for x, y in spangram_path
+    )
+
+    if spans_x:
+        # Spans the x dimension (top to bottom)
+        for x, y in spangram_path:
+            for i in range(n):
+                min_y = min(y, m - 1 - y)
+                for j in range(m):
+                    if j < y:
+                        zone1_mask |= 1 << (i * m + j)
+                    elif j > y:
+                        zone2_mask |= 1 << (i * m + j)
+    elif spans_y:
+        # Spans the y dimension (left to right)
+        for x, y in spangram_path:
+            for i in range(n):
+                for j in range(m):
+                    if i < x:
+                        zone1_mask |= 1 << (i * m + j)
+                    elif i > x:
+                        zone2_mask |= 1 << (i * m + j)
+
+    else:
+        raise ValueError("Spangram does not span x or y dimension")
+
+    # Remove spangram from zone1 and zone2
+    zone1_mask &= ~spangram_bm
+    zone2_mask &= ~spangram_bm
+
+    return zone1_mask, zone2_mask
+
+
+# for debugging
+def bitmask_to_coordinates(bitmask, n, m):
+    coordinates = []
+    for i in range(n):
+        for j in range(m):
+            if bitmask & (1 << (i * m + j)):
+                coordinates.append((i, j))
+    return coordinates
+
+
+def find_all_covering_paths_zone(all_paths, span_paths, n, m, solution_size):
 
     # Convert paths to bitmasks
     bitmask_list, bitmask_path_dict = get_bitmasks(all_paths, n, m)
     spanmask_list, spanmask_path_dict = get_bitmasks(span_paths, n, m)
     combined_bitmasks = spanmask_list + bitmask_list
     combined_path_dict = {**bitmask_path_dict, **spanmask_path_dict}
-    num_spans = len(spanmask_list)
 
-    print(f"span bitmasks: {len(spanmask_list)}")
-    print(f"regular bitmasks: {len(bitmask_list)}")
+    num_spans = len(spanmask_list)
+    k = len(combined_bitmasks)
+
+    print(f"span bitmasks: {num_spans}")
+    print(f"all bitmasks: {k}")
+
+    # initialize matrix
+    valid = init_valid_matrix(k, combined_bitmasks, combined_path_dict)
 
     full_cover = (1 << (n * m)) - 1  # Bitmask with all nodes covered
     all_solutions = []
 
-    def backtrack(current_cover, path_index, selected_paths):
-        # print(selected_paths)
+    for span_idx, span_bitmask in enumerate(spanmask_list):
 
-        if current_cover == full_cover:
-            all_solutions.append(selected_paths[:])
+        spangram_path = combined_path_dict[span_bitmask][0]
+        print(f"span {span_idx}: {path_to_word(spangram_path)}")
 
-            return
+        # get list of valid bitmasks
+        valid_idx_list = get_valid_bm_idx(valid, span_idx)
+        print(f"valid count: {len(valid_idx_list)}")
 
-        for i in range(path_index, len(combined_bitmasks)):
-            if current_cover & combined_bitmasks[i] == 0:  # No overlap
-                selected_paths.append(i)
-                backtrack(current_cover | combined_bitmasks[i], i + 1, selected_paths)
-                selected_paths.pop()
+        # divide board into two zones
+        z1_mask, z2_mask = divide_board_into_zones(spangram_path, span_bitmask, n, m)
 
-    # Try each spangram path as the starting point
-    for i, span_bitmask in enumerate(spanmask_list):
-        backtrack(span_bitmask, 0, [i])
+        print(f"z1: {bitmask_to_coordinates(z1_mask, n, m)}")
+        print(f"z2: {bitmask_to_coordinates(z2_mask, n, m)}")
+        print(f"span: {bitmask_to_coordinates(span_bitmask, n, m)}")
+
+        # assign valid bitmasks to each zone
+        z1_bm = []
+        z2_bm = []
+
+        span_bitmask = combined_bitmasks[span_idx]
+
+        # for bm_idx in valid_idx_list:
+        #     bitmask = combined_bitmasks[bm_idx]
+        #     if bitmask & z1_mask:
+        #         z1_bm.append(bm_idx)
+        #     elif bitmask & z2_mask:
+        #         z2_bm.append(bm_idx)
+        #     else:
+        #         # this shouldn't happen if get_valid_bm_idx is working correctly
+        #         raise ValueError("Path does not belong to either zone")
+
+        z1_solutions = []
+        z2_solutions = []
+
+        # TODO: fix zoning and run separately to combine answers later
+
+        def backtrack_zone(current_cover, bm_list, solutions, zone_mask):
+
+            print(f"current bms: {bm_list}")
+
+            if current_cover == zone_mask:
+                solutions.append(bm_list[:])
+                print(bm_list)
+                return
+
+            new_valid_idx_list = get_valid_bm_idx(valid, bm_list)
+            for i in new_valid_idx_list:
+                if current_cover & combined_bitmasks[i] == 0:
+                    bm_list.append(i)
+                    backtrack_zone(
+                        current_cover | combined_bitmasks[i],
+                        bm_list,
+                        solutions,
+                        zone_mask,
+                    )
+                    bm_list.pop()
+
+        backtrack_zone(span_bitmask, [span_idx], all_solutions, full_cover)
+
+    return all_solutions
+
+    return z1_bm, z2_bm
+
+    # def backtrack(current_cover, path_index, selected_paths):
+    #     # print(selected_paths)
+
+    #     if current_cover == full_cover:
+    #         all_solutions.append(selected_paths[:])
+
+    #         return
+
+    #     for i in range(path_index, len(combined_bitmasks)):
+    #         if current_cover & combined_bitmasks[i] == 0:  # No overlap
+    #             selected_paths.append(i)
+    #             backtrack(current_cover | combined_bitmasks[i], i + 1, selected_paths)
+    #             selected_paths.pop()
+
+    # # Try each spangram path as the starting point
+    # for i, span_bitmask in enumerate(spanmask_list):
+    #     backtrack(span_bitmask, 0, [i])
 
     solution_path_list = []
 
@@ -454,9 +621,10 @@ def __main__():
     cover_list = find_all_covering_paths_track(all_paths, span_paths, n, m)
     print(f"found {len(cover_list)} covering paths: {time.time() - start_time:.4f}s")
 
-    # start_time = time.time()
-    # cover_list = find_covering_paths_for_zones(all_paths, span_paths, n, m)
-    # print(f"found {len(cover_list)} covering paths: {time.time() - start_time:.4f}s")
+    start_time = time.time()
+    # z1_bm, z2_bm = find_all_covering_paths_zone(all_paths, span_paths, n, m)
+    cover_list = find_all_covering_paths_zone(all_paths, span_paths, n, m)
+    print(f"found {len(cover_list)} covering paths: {time.time() - start_time:.4f}s")
 
     for cover in cover_list:
         print(cover_to_word(cover, matrix))
