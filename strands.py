@@ -505,7 +505,9 @@ def backtrack_zone(
             bm_list.pop()
 
 
-def find_all_covering_paths_zone(all_paths, span_paths, n, m, solution_size):
+def find_all_covering_paths_zone(all_paths, span_paths, matrix, solution_size):
+
+    n, m = len(matrix), len(matrix[0])
 
     # Convert paths to bitmasks
     bitmask_list, bitmask_path_dict = get_bitmasks(all_paths, n, m)
@@ -516,22 +518,26 @@ def find_all_covering_paths_zone(all_paths, span_paths, n, m, solution_size):
     num_spans = len(spanmask_list)
     k = len(combined_bitmasks)
 
-    print()
     print(f"span bitmasks: {num_spans}")
     print(f"all bitmasks: {k}")
 
+    start = time.time()
+    print(f"initializing validity matrix")
     # initialize matrix
     valid = init_valid_matrix(k, combined_bitmasks, combined_path_dict, n, m)
+    print(f"matrix initialized: {time.time() - start:.4f}s")
 
     all_solutions = []
 
     for span_idx, span_bitmask in enumerate(spanmask_list):
 
-        # spangram_path = combined_path_dict[span_bitmask][0]
+        spangram_path = combined_path_dict[span_bitmask][0]
+        span_word = path_to_word(spangram_path, matrix)
 
         # get list of valid bitmasks
         valid_idx_list = get_valid_bm_idx(valid, span_idx)
-        print(f"Span {span_idx} valid count: {len(valid_idx_list)}")
+        print()
+        print(f"[{span_idx}]{span_word}: {len(valid_idx_list)}")
 
         # divide board into two zones
         zonemask_list = divide_board_into_zones_bm(span_bitmask, n, m)
@@ -573,11 +579,8 @@ def find_all_covering_paths_zone(all_paths, span_paths, n, m, solution_size):
         zone_solutions = [set() for _ in range(len(zonemask_list))]
         span_has_solution = True
 
-        print(f"{len(zone_bitmasks)} zones")
         for zone_idx, path_bitmask_list in enumerate(zone_bitmasks):
-            print(f"Zone {zone_idx}: {len(path_bitmask_list)} paths")
-
-        for zone_idx, path_bitmask_list in enumerate(zone_bitmasks):
+            print(f"Zone {span_idx}-{zone_idx}: {len(path_bitmask_list)} paths")
             zone_solution_list = zone_solutions[zone_idx]
             backtrack_zone(
                 0,
@@ -625,6 +628,7 @@ def find_all_covering_paths_zone(all_paths, span_paths, n, m, solution_size):
         span_solutions = running_solutions[-1]
 
         if len(span_solutions) > 0:
+            print(f"[{span_idx}]{span_word}: {len(span_solutions)} solutions found")
             all_solutions.extend(span_solutions)
 
     solution_path_list = []
@@ -832,9 +836,8 @@ def __main__():
     print(f"found {len(cover_list)} covering paths: {time.time() - start_time:.4f}s")
 
     start_time = time.time()
-    # z1_bm, z2_bm = find_all_covering_paths_zone(all_paths, span_paths, n, m)
     cover_list = find_all_covering_paths_zone(
-        all_paths, span_paths, n, m, solution_size
+        all_paths, span_paths, matrix, solution_size
     )
     print(f"found {len(cover_list)} covering paths: {time.time() - start_time:.4f}s")
 
