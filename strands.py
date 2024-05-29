@@ -553,6 +553,9 @@ def find_all_covering_paths_zone(all_paths, span_paths, matrix, solution_size):
 
     for span_idx, span_bitmask in enumerate(spanmask_list):
 
+        if span_idx != 8:
+            continue
+
         spangram_path = combined_path_dict[span_bitmask][0]
         span_word = path_to_word(spangram_path, matrix)
 
@@ -623,8 +626,10 @@ def find_all_covering_paths_zone(all_paths, span_paths, matrix, solution_size):
         ):
 
             current_subset = frozenset(bm_list)
+            print(bm_list)
 
             if current_cover == solution_mask:
+                print("SOLUTION FOUND")
 
                 # print for first solution, then for every 1000 solutions
                 # if len(solution_set) == 0 or len(solution_set) % 1000 == 0:
@@ -848,10 +853,11 @@ def find_all_covering_paths_zone_track(all_paths, span_paths, matrix, solution_s
                 solution_mask,
                 valid_idx_list,
                 available_zone_count,
+                explored_nodes,
             ):
 
                 current_subset = frozenset(bm_list)
-                # print(sorted(current_subset))
+                # print(bm_list)
 
                 if current_cover == solution_mask:
 
@@ -862,6 +868,7 @@ def find_all_covering_paths_zone_track(all_paths, span_paths, matrix, solution_s
                     return
 
                 if explored_nodes.search_subset(current_subset):
+                    # print("ALREADY EXPLORED")
                     return
 
                 new_valid_idx_list = get_valid_bm_idx(valid, bm_list, valid_idx_list)
@@ -875,10 +882,11 @@ def find_all_covering_paths_zone_track(all_paths, span_paths, matrix, solution_s
                             solution_mask,
                             new_valid_idx_list,
                             available_zone_count,
+                            explored_nodes,
                         )
+                        # print(f"INSERTING {bm_list}")
+                        explored_nodes.insert(bm_list)
                         bm_list.pop()
-                    else:
-                        explored_nodes.insert(current_subset)
 
             print(f"Zone {span_idx}-{zone_idx}: {len(path_bitmask_list)} paths")
 
@@ -892,6 +900,7 @@ def find_all_covering_paths_zone_track(all_paths, span_paths, matrix, solution_s
                     zonemask_list[zone_idx],
                     path_bitmask_list,
                     available_zone_count,
+                    explored_nodes,
                 )
                 explored_nodes.insert(frozenset([i]))
 
