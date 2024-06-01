@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import numpy as np
 
+from lexicon import get_game
+
 from util.trie import build_trie
 from util.integer_trie import build_integer_trie
 
@@ -1312,6 +1314,52 @@ def test():
     print(check_crossing_seg(((0, 0), (1, 1)), ((3, 4), (3, 5))))  # Should return False
 
 
+def game_test():
+
+    parent_dir = Path(__file__).parent
+    resource_dir = "resources"
+    word_file = "wordlist-v4.txt"
+
+    word_path = Path(parent_dir, resource_dir, word_file)
+    with open(word_path, "r") as f:
+        word_list = f.read().splitlines()
+
+    game_date = "2024-03-24"
+
+    game = get_game()
+
+    matrix = game["matrix"]
+    clue = game["clue"]
+    solution_count = game["solution_count"]
+    solution_words = game["solution_words"]
+    solution_paths = game["solution_paths"]
+    spangram = game["spangram"]
+    game_date = game["date"]
+
+    n = len(matrix)
+    m = len(matrix[0])
+
+    all_paths, span_paths = get_all_words(matrix, word_list)
+    all_words = [path_to_word(path, matrix) for path in all_paths]
+    span_words = [path_to_word(path, matrix) for path in span_paths]
+    print(f"Word paths found: {len(all_words)}")
+    print(f"Span paths found: {len(span_words)}")
+
+    for row in matrix:
+        print("  ".join(row))
+
+    print(f"Starting game: {game_date} - {clue}")
+    start_time = time.time()
+    cover_list = find_all_covering_paths_zone(
+        all_paths, span_paths, matrix, solution_count
+    )
+    print(f"found {len(cover_list)} covering paths: {time.time() - start_time:.4f}s")
+    print(f"solution: {[spangram] + solution_words}")
+
+    for cover in cover_list:
+        print(cover_to_word(cover, matrix))
+
+
 def __main__():
 
     parent_dir = Path(__file__).parent
@@ -1321,11 +1369,10 @@ def __main__():
     input_file = "strands_input.json"
 
     word_path = Path(parent_dir, resource_dir, word_file)
-    input_path = Path(parent_dir, resource_dir, input_file)
-
     with open(word_path, "r") as f:
         word_list = f.read().splitlines()
 
+    input_path = Path(parent_dir, resource_dir, input_file)
     with open(input_path, "r") as f:
         input_data = json.load(f)
 
