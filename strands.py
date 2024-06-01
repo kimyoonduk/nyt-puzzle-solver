@@ -202,16 +202,24 @@ def find_all_covering_paths(all_paths, span_paths, n, m):
 
 
 # matrix for checking valid path pairings
-def init_valid_matrix(k, combined_bitmasks, combined_path_dict, n, m, min_zone_size=4):
+def init_valid_matrix(combined_bitmasks, combined_path_dict, board, min_zone_size=4):
+
+    k = len(combined_bitmasks)
+
     valid = np.ones((k, k), dtype=bool)
     np.fill_diagonal(valid, False)
 
     # check for overlaps and crossing
     # triangluar matrix to reduce computation
     for i in range(k):
+        bm_i = combined_bitmasks[i]
+        paths_i = combined_path_dict[combined_bitmasks[i]]
+        words_i = set(path_to_word(path, board) for path in paths_i)
+
         for j in range(i + 1, k):
-            bm_i = combined_bitmasks[i]
             bm_j = combined_bitmasks[j]
+            paths_j = combined_path_dict[bm_j]
+            words_j = set(path_to_word(path, board) for path in paths_j)
 
             # overlap
             if bm_i & bm_j:
@@ -221,9 +229,14 @@ def init_valid_matrix(k, combined_bitmasks, combined_path_dict, n, m, min_zone_s
             # crossing
             # any path is okay
             if check_crossing_path(
-                combined_path_dict[bm_i][0],
-                combined_path_dict[bm_j][0],
+                paths_i[0],
+                paths_j[0],
             ):
+                valid[i, j] = False
+                valid[j, i] = False
+
+            # if the sets words_i and words_j are exactly the same, then invalid
+            if words_i == words_j:
                 valid[i, j] = False
                 valid[j, i] = False
 
@@ -503,7 +516,7 @@ def find_all_covering_paths_zone(all_paths, span_paths, matrix, solution_size):
     start = time.time()
     print(f"initializing validity matrix")
     # initialize matrix
-    valid = init_valid_matrix(k, combined_bitmasks, combined_path_dict, n, m)
+    valid = init_valid_matrix(combined_bitmasks, combined_path_dict, matrix)
     print(f"matrix initialized: {time.time() - start:.4f}s")
 
     # print indices of valid bitmasks for bitmask 394
@@ -528,8 +541,8 @@ def find_all_covering_paths_zone(all_paths, span_paths, matrix, solution_size):
 
     for span_idx, span_bitmask in enumerate(spanmask_list):
 
-        if span_idx != 8:
-            continue
+        # if span_idx != 8:
+        #     continue
 
         spangram_path = combined_path_dict[span_bitmask][0]
         span_word = path_to_word(spangram_path, matrix)
@@ -601,7 +614,6 @@ def find_all_covering_paths_zone(all_paths, span_paths, matrix, solution_size):
         ):
 
             current_subset = frozenset(bm_list)
-            print(bm_list)
 
             if current_cover == solution_mask:
                 # print("SOLUTION FOUND")
@@ -764,7 +776,7 @@ def find_all_covering_paths_zone_track(all_paths, span_paths, matrix, solution_s
     start = time.time()
     print(f"initializing validity matrix")
     # initialize matrix
-    valid = init_valid_matrix(k, combined_bitmasks, combined_path_dict, n, m)
+    valid = init_valid_matrix(combined_bitmasks, combined_path_dict, matrix)
     print(f"matrix initialized: {time.time() - start:.4f}s")
 
     all_solutions = []
@@ -958,7 +970,7 @@ def find_all_covering_paths_v3(all_paths, span_paths, matrix, solution_size):
     start = time.time()
     print(f"initializing validity matrix")
     # initialize matrix
-    valid = init_valid_matrix(k, combined_bitmasks, combined_path_dict, n, m)
+    valid = init_valid_matrix(combined_bitmasks, combined_path_dict, matrix)
     print(f"valid matrix initialized: {time.time() - start:.4f}s")
 
     start = time.time()
