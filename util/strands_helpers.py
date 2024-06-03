@@ -53,16 +53,6 @@ def cover_to_word(cover, matrix):
     return [[path_to_word(path, matrix) for path in path_list] for path_list in cover]
 
 
-# for debugging
-def bitmask_to_coordinates(bitmask, n, m):
-    coordinates = []
-    for i in range(n):
-        for j in range(m):
-            if bitmask & (1 << (i * m + j)):
-                coordinates.append((i, j))
-    return coordinates
-
-
 # print coordinates as 2d n x m matrix marked with 1
 def bitmask_to_matrix(bitmask, n, m):
     matrix = [["." for _ in range(m)] for _ in range(n)]

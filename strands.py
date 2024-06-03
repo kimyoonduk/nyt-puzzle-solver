@@ -1,5 +1,4 @@
 import time
-from collections import Counter, defaultdict
 import json
 from pathlib import Path
 import numpy as np
@@ -12,6 +11,7 @@ from util.trie import build_trie
 from util.bitmask_helpers import (
     get_bitmask_list,
     divide_board_into_zones_bm,
+    divide_board_into_zones_with_merge,
     is_trapped,
 )
 from util.word_helpers import optimize_word_list
@@ -33,9 +33,9 @@ DIRECTIONS_8 = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1
 
 # given a matrix and a lexicon, return a list of all words and spangrams that can be formed
 # includes filters for minimum word length, character counts, and valid sequences
-def get_all_words(matrix, lexicon, verbose=False):
+def get_all_words(matrix, word_list, verbose=False):
 
-    word_list = optimize_word_list(matrix, lexicon)
+    word_list = optimize_word_list(matrix, word_list)
 
     n = len(matrix)
     m = len(matrix[0])
@@ -259,8 +259,11 @@ def find_all_covering_paths_v5(
         # get list of valid bitmasks
         valid_idx_list = get_valid_bm_idx(valid, span_idx)
 
-        # divide board into two zones
-        zonemask_list = divide_board_into_zones_bm(span_bitmask, n, m)
+        # divide board into two or more zones
+        # zonemask_list = divide_board_into_zones_bm(span_bitmask, n, m)
+        zonemask_list = divide_board_into_zones_with_merge(spangram_path, n, m)
+
+        print(f"Span {span_idx}-{span_word}: {len(zonemask_list)} zones")
 
         if len(zonemask_list) == 0:
             print(f"No valid zones for span: {span_idx}-{span_word}")
@@ -532,7 +535,7 @@ def find_all_covering_paths_v5(
     return solution_object
 
 
-def test_published_games():
+def test_published_games(game_date=None, timeout=300):
 
     parent_dir = Path(__file__).parent
     resource_dir = "resources"
@@ -551,6 +554,10 @@ def test_published_games():
     timeout_count = 0
 
     results = {}
+
+    if game_date:
+        start_date = datetime.datetime.strptime(game_date, "%Y-%m-%d").date()
+        today = start_date
 
     while start_date <= today:
         date_str = start_date.strftime("%Y-%m-%d")
@@ -580,7 +587,7 @@ def test_published_games():
 
         start_time = time.time()
         solution_object = find_all_covering_paths_v5(
-            all_paths, span_paths, matrix, solution_count
+            all_paths, span_paths, matrix, solution_count, timeout
         )
         print(f"Search completed")
         print(f"Given solution: {[spangram] + given_solution}")
@@ -614,6 +621,9 @@ def test_published_games():
         solved = len(solution_path_list) > 0
         correct_solution = given_solution_set in all_solution_permuations
 
+        # convert all_solution_permuations to a list of lists
+        all_solution_permuations = [list(sol) for sol in all_solution_permuations]
+
         if candidate_found:
             candidate_found_count += 1
 
@@ -630,7 +640,7 @@ def test_published_games():
             timeout_count += 1
 
         results[game_date] = {
-            "solutions": list(all_solution_permuations),
+            "solutions": all_solution_permuations,
             "solution_paths": solution_path_list,
             "candidate_paths": candidate_path_list,
             "soltion_words": solutions_in_words,
@@ -660,4 +670,7 @@ def test_published_games():
 
 def __main__():
 
-    results, stats = test_published_games()
+    results, stats = test_published_games("2024-03-15")
+
+    with open("results.json", "w") as f:
+        json.dump(results, f)
