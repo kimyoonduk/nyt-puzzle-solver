@@ -6,3 +6,4 @@
 [x] Merge isolated zones
 [ ] Sort bitmasks by size (doubtful but easy to try)
 [ ] Convert into minimal set cover problem using embedding distance (involves semantics - no longer a "blind solve")
+[ ] Refactoring and readability improvements

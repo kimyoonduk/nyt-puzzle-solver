@@ -10,7 +10,6 @@ from lexicon import get_game
 from util.trie import build_trie
 from util.bitmask_helpers import (
     get_bitmask_list,
-    divide_board_into_zones_bm,
     divide_board_into_zones_with_merge,
     is_trapped,
 )
@@ -29,6 +28,28 @@ DIRECTIONS_4 = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
 # includes diagonals
 DIRECTIONS_8 = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]
+
+# big integer for placeholder solution size
+BIG_NUMBER = 99999999
+
+
+def get_local_word_list(word_file):
+    parent_dir = Path(__file__).parent
+    resource_dir = "resources"
+
+    word_path = Path(parent_dir, resource_dir, word_file)
+    with open(word_path, "r") as f:
+        word_list = f.read().splitlines()
+
+    return word_list
+
+
+def save_results(results, filename):
+    parent_dir = Path(__file__).parent
+    resource_dir = "resources"
+
+    with open(Path(parent_dir, resource_dir, filename), "w") as f:
+        json.dump(results, f)
 
 
 # given a matrix and a lexicon, return a list of all words and spangrams that can be formed
@@ -217,7 +238,7 @@ Logic
 
 
 def find_all_covering_paths_v5(
-    all_paths, span_paths, matrix, solution_size, timeout=300
+    all_paths, span_paths, matrix, solution_size=None, timeout=300
 ):
 
     n, m = len(matrix), len(matrix[0])
@@ -231,7 +252,12 @@ def find_all_covering_paths_v5(
     num_spans = len(spanmask_list)
     k = len(combined_bitmasks)
 
-    print(f"searching solution of size: {solution_size}")
+    if solution_size:
+        filter_solutions_by_size = True
+        print(f"searching solution of size: {solution_size}")
+    else:
+        filter_solutions_by_size = False
+        solution_size = BIG_NUMBER
     print(f"span bitmasks: {num_spans}")
     print(f"all bitmasks: {k}")
 
@@ -491,13 +517,19 @@ def find_all_covering_paths_v5(
             for zone_idx in range(len(zone_solutions)):
                 print(f"Zone {span_idx}-{zone_idx}: {len(zone_solutions[zone_idx])}")
 
-            # filter solutions by solution size
-            filtered_solutions = [
-                sol for sol in span_solutions if len(sol) == solution_size
-            ]
-            print(
-                f"[{span_idx}]{span_word}: {len(span_solutions)} candidate solutions found. {len(filtered_solutions)} solutions of size {solution_size}"
-            )
+            if filter_solutions_by_size:
+                # filter solutions by solution size
+                filtered_solutions = [
+                    sol for sol in span_solutions if len(sol) == solution_size
+                ]
+                print(
+                    f"[{span_idx}]{span_word}: {len(span_solutions)} candidate solutions found. {len(filtered_solutions)} solutions of size {solution_size}"
+                )
+            else:
+                filtered_solutions = span_solutions
+                print(
+                    f"[{span_idx}]{span_word}: {len(span_solutions)} candidate solutions found."
+                )
 
             all_candidates.extend(span_solutions)
             all_solutions.extend(filtered_solutions)
@@ -537,13 +569,7 @@ def find_all_covering_paths_v5(
 
 def test_published_games(game_date=None, timeout=300):
 
-    parent_dir = Path(__file__).parent
-    resource_dir = "resources"
-    word_file = "wordlist-v4.txt"
-
-    word_path = Path(parent_dir, resource_dir, word_file)
-    with open(word_path, "r") as f:
-        word_list = f.read().splitlines()
+    word_list = get_local_word_list("wordlist-v4.txt")
 
     start_date = datetime.date(2024, 3, 4)
     today = datetime.date.today()
@@ -668,9 +694,87 @@ def test_published_games(game_date=None, timeout=300):
     return results, stats
 
 
+def solve(matrix, word_list, solution_count=None, timeout=300):
+
+    n = len(matrix)
+    m = len(matrix[0])
+
+    all_paths, span_paths = get_all_words(matrix, word_list)
+    all_words = [path_to_word(path, matrix) for path in all_paths]
+    span_words = [path_to_word(path, matrix) for path in span_paths]
+    print(f"Word paths found: {len(all_words)}")
+    print(f"Span paths found: {len(span_words)}")
+
+    for row in matrix:
+        print("  ".join(row))
+
+    start_time = time.time()
+    solution_object = find_all_covering_paths_v5(
+        all_paths, span_paths, matrix, solution_count, timeout
+    )
+    print(f"Search completed")
+
+    solution_path_list = solution_object["solution_path_list"]
+    candidate_path_list = solution_object["candidate_path_list"]
+    timed_out = solution_object["timed_out"]
+    elapsed_time = solution_object["elapsed_time"]
+    time_to_first_solution = solution_object["time_to_first_solution"]
+
+    solutions_in_words = [cover_to_word(cover, matrix) for cover in solution_path_list]
+
+    all_solution_permuations = set()
+
+    for solution in solutions_in_words:
+        print(solution)
+        solution_perms = list(itertools.product(*solution))
+
+        for perm in solution_perms:
+            all_solution_permuations.add(frozenset(perm))
+
+    print(
+        f"found {len(all_solution_permuations)} solutions: {time.time() - start_time:.4f}s"
+    )
+
+    # convert all_solution_permuations to a list of lists
+    all_solution_permuations = [list(sol) for sol in all_solution_permuations]
+
+    if timed_out:
+        print(f"Search timed out: {elapsed_time:.4f}s / {timeout}s")
+
+    result = {
+        "solutions": all_solution_permuations,
+        "solution_paths": solution_path_list,
+        "candidate_paths": candidate_path_list,
+        "soltion_words": solutions_in_words,
+        "candidate_words": [
+            cover_to_word(cover, matrix) for cover in candidate_path_list
+        ],
+        "timed_out": timed_out,
+        "elapsed_time": elapsed_time,
+        "time_to_first_solution": time_to_first_solution,
+    }
+
+    print(f"Game Completed in {elapsed_time:.4f}s.\n")
+
+    return result
+
+
 def __main__():
 
-    results, stats = test_published_games("2024-03-15")
+    results, stats = test_published_games(timeout=180)
 
-    with open("results.json", "w") as f:
-        json.dump(results, f)
+    today = datetime.date.today()
+    save_results(results, f"results-{today}-1.json")
+
+    word_list = get_local_word_list("wordlist-v4.txt")
+    result = solve(
+        [
+            ["B", "A", "N", "A"],
+            ["N", "A", "I", "T"],
+            ["F", "R", "U", "L"],
+            ["E", "I", "E", "P"],
+            ["M", "L", "A", "P"],
+        ],
+        word_list,
+    )
+    print(result)
