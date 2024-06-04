@@ -286,11 +286,9 @@ def find_all_covering_paths_v5(
         # get list of valid bitmasks
         valid_idx_list = get_valid_bm_idx(valid, span_idx)
 
-        # divide board into two or more zones
-        # zonemask_list = divide_board_into_zones_bm(span_bitmask, n, m)
-        zonemask_list = divide_board_into_zones_with_merge(spangram_path, n, m)
-
         print(f"Span {span_idx}-{span_word}: {len(zonemask_list)} zones")
+        # divide board into two or more zones
+        zonemask_list = divide_board_into_zones_with_merge(spangram_path, n, m)
 
         if len(zonemask_list) == 0:
             print(f"No valid zones for span: {span_idx}-{span_word}")
@@ -762,7 +760,7 @@ def solve(matrix, word_list, solution_count=None, timeout=300):
 
 def __main__():
 
-    results, stats = test_published_games(timeout=180)
+    results, stats = test_published_games(game_date="2024-06-04", timeout=180)
 
     today = datetime.date.today()
     save_results(results, f"results-{today}-1.json")
