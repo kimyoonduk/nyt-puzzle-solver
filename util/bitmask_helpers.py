@@ -34,6 +34,26 @@ def get_bitmask_list(path_list, n, m):
     return bitmask_list, bitmask_path_dict
 
 
+# given a list of paths, returns a list of bitmasks and a dictionary mapping each bitmask to the paths that correspond to it
+def get_bitmask_list_sorted(path_list, n, m):
+
+    bitmask_path_dict = defaultdict(list)
+    bitmasks = set()
+
+    for path in path_list:
+
+        bitmask = path_to_bitmask(path, n, m)
+        bitmasks.add(bitmask)
+        bitmask_path_dict[bitmask].append(path)
+
+    bitmask_list = list(bitmasks)
+
+    # sort bitmask_list in ascending order
+    bitmask_list.sort()
+
+    return bitmask_list, bitmask_path_dict
+
+
 # count number of 1s in bitmask
 def count_set_bits(x):
     count = 0

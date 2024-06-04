@@ -10,6 +10,7 @@ from lexicon import get_game
 from util.trie import build_trie
 from util.bitmask_helpers import (
     get_bitmask_list,
+    # get_bitmask_list_sorted,
     divide_board_into_zones_with_merge,
     is_trapped,
 )
@@ -669,7 +670,7 @@ def test_published_games(game_date=None, timeout=300):
             "solutions": all_solution_permuations,
             "solution_paths": solution_path_list,
             "candidate_paths": candidate_path_list,
-            "soltion_words": solutions_in_words,
+            "solution_words": solutions_in_words,
             "candidate_words": [
                 cover_to_word(cover, matrix) for cover in candidate_path_list
             ],
@@ -745,7 +746,7 @@ def solve(matrix, word_list, solution_count=None, timeout=300):
         "solutions": all_solution_permuations,
         "solution_paths": solution_path_list,
         "candidate_paths": candidate_path_list,
-        "soltion_words": solutions_in_words,
+        "solution_words": solutions_in_words,
         "candidate_words": [
             cover_to_word(cover, matrix) for cover in candidate_path_list
         ],
@@ -765,6 +766,22 @@ def __main__():
 
     today = datetime.date.today()
     save_results(results, f"results-{today}-1.json")
+
+    # get average time_to_first_solution, where time_to_first_solution > 0
+    time_to_first_solution_list = [
+        result["time_to_first_solution"]
+        for result in results.values()
+        if result["time_to_first_solution"] > 0
+    ]
+    np.median(time_to_first_solution_list)
+
+    # get number of correct solutions
+    correct_solution_count = len(
+        [result for result in results.values() if result["correct_solution"]]
+    )
+
+    stats
+    len(results)
 
     word_list = get_local_word_list("wordlist-v4.txt")
     result = solve(

@@ -1149,8 +1149,6 @@ def bitmask_to_paths(bitmask):
     return paths
 
 
-
-
 def find_all_covering_paths_zone(all_paths, span_paths, matrix, solution_size):
 
     n, m = len(matrix), len(matrix[0])
@@ -1416,3 +1414,343 @@ def find_all_covering_paths_zone(all_paths, span_paths, matrix, solution_size):
         solution_path_list.append(solution_path)
 
     return solution_path_list
+
+
+# v6 - sorting bitmask, hybrid tracking
+# no performance improvements
+def find_all_covering_paths_v6(
+    all_paths, span_paths, matrix, solution_size=None, timeout=300
+):
+
+    n, m = len(matrix), len(matrix[0])
+
+    # Convert paths to bitmasks
+    bitmask_list, bitmask_path_dict = get_bitmask_list_sorted(all_paths, n, m)
+    spanmask_list, spanmask_path_dict = get_bitmask_list(span_paths, n, m)
+    print(bitmask_list[:10])
+    combined_bitmasks = spanmask_list + bitmask_list
+    combined_path_dict = {**bitmask_path_dict, **spanmask_path_dict}
+
+    num_spans = len(spanmask_list)
+    k = len(combined_bitmasks)
+
+    if solution_size:
+        filter_solutions_by_size = True
+        print(f"searching solution of size: {solution_size}")
+    else:
+        filter_solutions_by_size = False
+        solution_size = BIG_NUMBER
+    print(f"span bitmasks: {num_spans}")
+    print(f"all bitmasks: {k}")
+
+    start = time.time()
+    game_deadline = start + timeout * 2
+    game_timed_out = False
+    print(f"initializing validity matrix")
+    # initialize matrix
+    valid = init_valid_matrix(combined_bitmasks, combined_path_dict, matrix)
+    print(f"matrix initialized: {time.time() - start:.4f}s")
+
+    all_candidates = []
+    all_solutions = []
+
+    zones_by_span = []
+
+    timed_out_span = -1
+    time_to_first_solution = -1
+
+    for span_idx, span_bitmask in enumerate(spanmask_list):
+
+        spangram_path = combined_path_dict[span_bitmask][0]
+        span_word = path_to_word(spangram_path, matrix)
+
+        # get list of valid bitmasks
+        valid_idx_list = get_valid_bm_idx(valid, span_idx)
+
+        # divide board into two or more zones
+        # zonemask_list = divide_board_into_zones_bm(span_bitmask, n, m)
+        zonemask_list = divide_board_into_zones_with_merge(spangram_path, n, m)
+
+        print(f"Span {span_idx}-{span_word}: {len(zonemask_list)} zones")
+
+        if len(zonemask_list) == 0:
+            print(f"No valid zones for span: {span_idx}-{span_word}")
+            continue
+
+        zone_bitmasks = [[] for _ in range(len(zonemask_list))]
+
+        # assign path bitmasks to zones
+        for bm_idx in valid_idx_list:
+            bitmask = combined_bitmasks[bm_idx]
+
+            for zone_idx, zonemask in enumerate(zonemask_list):
+
+                if bitmask & zonemask:
+                    zone_bitmasks[zone_idx].append(bm_idx)
+                    break
+
+        zones_by_span.append((span_idx, zone_bitmasks, zonemask_list))
+
+    # sort spanmask_list by ascending order of max(zone sizes)
+    sorted_spanmask_list = sorted(
+        zones_by_span, key=lambda pair: max(len(zone) for zone in pair[1])
+    )
+    print(f"Searching {len(sorted_spanmask_list)} spans, sorted by max zone size")
+
+    for span_idx, zone_bitmasks, zonemask_list in sorted_spanmask_list:
+
+        if game_timed_out:
+            print(f"Game timed out. Stopping search regardless of solutions.")
+            break
+
+        if (timed_out_span >= 0) and len(all_solutions) > 0:
+            print(
+                f"Span {timed_out_span} timed out. Stopping search and returning available solutions."
+            )
+            break
+
+        span_start = time.time()
+        span_deadline = span_start + timeout
+
+        span_bitmask = combined_bitmasks[span_idx]
+        spangram_path = combined_path_dict[span_bitmask][0]
+        span_word = path_to_word(spangram_path, matrix)
+        print(f"\n[{span_idx}]{span_word}: {len(zone_bitmasks)} zones")
+
+        # sort zonemask_list and zone_bitmasks by size of zone_bitmask in ascending order
+        paired_zones = list(zip(zone_bitmasks, zonemask_list))
+
+        # sort paired_zones by the size of zone_bitmasks
+        paired_zones.sort(key=lambda pair: len(pair[0]))
+
+        # unzip the sorted pairs
+        zone_bitmasks, zonemask_list = zip(*paired_zones)
+
+        # convert the zip objects back to lists
+        zone_bitmasks = list(zone_bitmasks)
+        zonemask_list = list(zonemask_list)
+
+        zone_solutions = [set() for _ in range(len(zonemask_list))]
+        span_has_solution = True
+
+        visited_subsets = set()
+        explored_nodes = build_integer_trie([])
+
+        available_zone_count = solution_size - 1  # subtract 1 for the spangram
+
+        for zone_idx, path_bitmask_list in enumerate(zone_bitmasks):
+            print(f"Zone {span_idx}-{zone_idx}: {len(path_bitmask_list)} paths")
+
+            def backtrack_zone(
+                current_cover,
+                current_path,
+                solution_set,
+                solution_mask,
+                valid_idx_list,
+                valid_matrix,
+                bitmask_list,
+            ):
+
+                current_subset = frozenset(current_path)
+
+                if current_cover == solution_mask:
+
+                    solution_set.add(current_subset)
+
+                    return
+
+                if len(current_path) >= available_zone_count:
+                    # print(f"Exceeded zone count: {len(current_path)} / {available_zone_count}")
+                    visited_subsets.add(current_subset)
+                    return
+
+                if time.time() > span_deadline:
+                    visited_subsets.add(current_subset)
+                    return
+
+                if len(current_path) < 4:
+                    if current_subset in visited_subsets:
+                        return
+                    visited_subsets.add(current_subset)
+                else:
+                    if explored_nodes.search_subset(current_subset):
+                        return
+
+                new_valid_idx_list = get_valid_bm_idx(
+                    valid_matrix, current_path, valid_idx_list
+                )
+                for i in new_valid_idx_list:
+                    if current_cover & bitmask_list[i] == 0:
+                        current_path.append(i)
+                        backtrack_zone(
+                            current_cover | bitmask_list[i],
+                            current_path,
+                            solution_set,
+                            solution_mask,
+                            new_valid_idx_list,
+                            valid_matrix,
+                            bitmask_list,
+                        )
+                        explored_nodes.insert(frozenset(current_path))
+                        current_path.pop()
+
+            # if too many paths in zone, resize matrix and filter further
+            if len(path_bitmask_list) > 300:
+
+                # create new valid matrix, combined_bitmasks, and combined_path_dict based on valid_idx_list
+                zone_valid = valid[path_bitmask_list][:, path_bitmask_list]
+
+                print(f"resizing validity matrix: {zone_valid.shape}")
+
+                # combined_bitmasks are reindexed based on zone_valid
+                zone_valid_bitmasks = [combined_bitmasks[i] for i in path_bitmask_list]
+                new_bm_index = range(len(path_bitmask_list))
+
+                # update valid span
+                zone_valid = update_valid_matrix(
+                    zone_valid, span_bitmask, zone_valid_bitmasks, n, m
+                )
+
+                # maintain a dict from new index to original index
+                resized_to_orig = {i: path_bitmask_list[i] for i in new_bm_index}
+
+                zone_solution_resized = set()
+
+                for i in new_bm_index:
+                    backtrack_zone(
+                        zone_valid_bitmasks[i],
+                        [i],
+                        zone_solution_resized,
+                        zonemask_list[zone_idx],
+                        new_bm_index,
+                        zone_valid,
+                        zone_valid_bitmasks,
+                    )
+
+                # convert zone_solution_resized (set of frozensets) to original indices
+                zone_solution_resized = {
+                    frozenset(resized_to_orig[i] for i in sol)
+                    for sol in zone_solution_resized
+                }
+
+                zone_solutions[zone_idx] = zone_solution_resized
+
+            else:
+                for i in path_bitmask_list:
+                    backtrack_zone(
+                        combined_bitmasks[i],
+                        [i],
+                        zone_solutions[zone_idx],
+                        zonemask_list[zone_idx],
+                        path_bitmask_list,
+                        valid,
+                        combined_bitmasks,
+                    )
+                    explored_nodes.insert(frozenset([i]))
+
+            # if zone timed out, skip this spangram
+            if time.time() > span_deadline:
+                print(f"Zone {span_idx}-{zone_idx} timed out. Skipping spangram.")
+                timed_out_span = span_idx
+                span_has_solution = False
+                break
+
+            # if zone does not have solution, skip this spangram
+            if len(zone_solutions[zone_idx]) == 0:
+                print(f"Zone {span_idx}-{zone_idx} has no solution. Skipping spangram.")
+
+                span_has_solution = False
+                break
+
+            # update available zone count
+            # get unique solutions
+            zone_solution_list = list(zone_solutions[zone_idx])
+            # subtract size of smallest zone_solution
+
+            min_zone_size = len(min(zone_solution_list, key=len))
+            available_zone_count -= min_zone_size
+            print(
+                f"Zone {span_idx}-{zone_idx}: {len(zone_solution_list)} solutions with min size {min_zone_size}."
+            )
+
+        print(f"span finished: {time.time() - span_start:.4f}s")
+
+        if not span_has_solution:
+            continue
+
+        # combine zone solutions
+        # TODO: refactor with list(itertools.product(*solution))
+        span_solutions = []
+
+        running_solutions = [[] for _ in range(len(zone_solutions))]
+
+        for zone_idx in range(len(zone_solutions)):
+            zone_solution_list = list(zone_solutions[zone_idx])
+
+            for sol in zone_solution_list:
+                if zone_idx == 0:
+                    # first put in span_idx
+                    new_sol = [span_idx] + list(sol)
+                    running_solutions[zone_idx].append(new_sol)
+                else:
+                    for prev_sol in running_solutions[zone_idx - 1]:
+                        new_sol = prev_sol + list(sol)
+                        running_solutions[zone_idx].append(new_sol)
+
+        span_solutions = running_solutions[-1]
+
+        if len(span_solutions) > 0:
+            if (len(all_solutions) == 0) and (time_to_first_solution < 0):
+                time_to_first_solution = time.time() - start
+                print(f"First solution found in {time_to_first_solution:.4f}s")
+            for zone_idx in range(len(zone_solutions)):
+                print(f"Zone {span_idx}-{zone_idx}: {len(zone_solutions[zone_idx])}")
+
+            if filter_solutions_by_size:
+                # filter solutions by solution size
+                filtered_solutions = [
+                    sol for sol in span_solutions if len(sol) == solution_size
+                ]
+                print(
+                    f"[{span_idx}]{span_word}: {len(span_solutions)} candidate solutions found. {len(filtered_solutions)} solutions of size {solution_size}"
+                )
+            else:
+                filtered_solutions = span_solutions
+                print(
+                    f"[{span_idx}]{span_word}: {len(span_solutions)} candidate solutions found."
+                )
+
+            all_candidates.extend(span_solutions)
+            all_solutions.extend(filtered_solutions)
+
+        # update game timeout flag
+        game_timed_out = time.time() > game_deadline
+
+    solution_path_list = []
+    candidate_path_list = []
+
+    for solution in all_solutions:
+        solution_path = [combined_path_dict[combined_bitmasks[idx]] for idx in solution]
+        solution_path_list.append(solution_path)
+
+    for candidate in all_candidates:
+        candidate_path = [
+            combined_path_dict[combined_bitmasks[idx]] for idx in candidate
+        ]
+        candidate_path_list.append(candidate_path)
+
+    timed_out = (
+        True if (timed_out_span >= 0 and len(solution_path_list) == 0) else False
+    )
+
+    elapsed_time = time.time() - start
+
+    solution_object = {
+        "solution_path_list": solution_path_list,
+        "candidate_path_list": candidate_path_list,
+        "timed_out": timed_out,
+        "elapsed_time": elapsed_time,
+        "time_to_first_solution": time_to_first_solution,
+    }
+
+    return solution_object
