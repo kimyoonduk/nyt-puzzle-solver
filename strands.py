@@ -8,18 +8,15 @@ import itertools
 from lexicon import get_game
 
 from util.trie import build_trie
-from util.bitmask_helpers import (
-    get_bitmask_list,
-    # get_bitmask_list_sorted,
-    divide_board_into_zones_with_merge,
-    is_trapped,
-)
 from util.word_helpers import optimize_word_list
 from util.strands_helpers import (
     is_spangram,
     check_crossing_path,
     path_to_word,
     cover_to_word,
+    get_bitmask_list,
+    divide_board_into_zones_with_merge,
+    is_trapped,
 )
 
 # from util.integer_trie import build_integer_trie
@@ -286,9 +283,9 @@ def find_all_covering_paths_v5(
         # get list of valid bitmasks
         valid_idx_list = get_valid_bm_idx(valid, span_idx)
 
-        print(f"Span {span_idx}-{span_word}: {len(zonemask_list)} zones")
         # divide board into two or more zones
         zonemask_list = divide_board_into_zones_with_merge(spangram_path, n, m)
+        print(f"Span {span_idx}-{span_word}: {len(zonemask_list)} zones")
 
         if len(zonemask_list) == 0:
             print(f"No valid zones for span: {span_idx}-{span_word}")
