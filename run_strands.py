@@ -5,19 +5,20 @@ import numpy as np
 import datetime
 import itertools
 
-from lexicon import get_game
+from strands.game_loader import get_game
 
-from util.trie import build_trie
-from util.word_helpers import optimize_word_list
-from util.strands_helpers import (
+from strands.trie import build_trie
+from strands.word_helpers import optimize_word_list
+from strands.strands_helpers import (
     is_spangram,
     check_crossing_path,
     path_to_word,
     cover_to_word,
     get_bitmask_list,
     divide_board_into_zones_with_merge,
-    is_trapped,
 )
+
+from strands.valid_matrix import init_valid_matrix, update_valid_matrix
 
 # from util.integer_trie import build_integer_trie
 
@@ -117,73 +118,6 @@ def get_all_words(matrix, word_list, verbose=False):
         )
 
     return all_paths, span_paths
-
-
-# precomputed matrix for checking valid path pairings
-def init_valid_matrix(combined_bitmasks, combined_path_dict, board, min_zone_size=4):
-
-    k = len(combined_bitmasks)
-
-    valid = np.ones((k, k), dtype=bool)
-    np.fill_diagonal(valid, False)
-
-    # check for overlaps and crossing
-    # triangluar matrix to reduce computation
-    for i in range(k):
-        bm_i = combined_bitmasks[i]
-        paths_i = combined_path_dict[combined_bitmasks[i]]
-        words_i = set(path_to_word(path, board) for path in paths_i)
-
-        for j in range(i + 1, k):
-            bm_j = combined_bitmasks[j]
-            paths_j = combined_path_dict[bm_j]
-            words_j = set(path_to_word(path, board) for path in paths_j)
-
-            # overlap
-            if bm_i & bm_j:
-                valid[i, j] = False
-                valid[j, i] = False
-
-            # crossing
-            # any path is okay
-            if check_crossing_path(
-                paths_i[0],
-                paths_j[0],
-            ):
-                valid[i, j] = False
-                valid[j, i] = False
-
-            # if the sets words_i and words_j are exactly the same, then invalid
-            if words_i == words_j:
-                valid[i, j] = False
-                valid[j, i] = False
-
-    return valid
-
-
-# update validity matrix for pair of bitmasks i and j, given a spangram
-# if any cluster is smaller than min_zone_size, pair i, j is invalid
-def update_valid_matrix(valid, span_bm, bitmask_list, n, m, min_zone_size=4):
-    k = valid.shape[0]
-
-    full_cover = (1 << (n * m)) - 1
-
-    for i in range(k):
-        bm_i = bitmask_list[i]
-
-        for j in range(i + 1, k):
-            bm_j = bitmask_list[j]
-
-            available = full_cover & ~span_bm & ~bm_i & ~bm_j
-
-            # check for trapped zones. if any cluster is less than min_zone_size, invalid
-            invalid = is_trapped(available, n, m, min_zone_size)
-
-            if invalid:
-                valid[i, j] = False
-                valid[j, i] = False
-
-    return valid
 
 
 # given a validity matrix, a list of indices to check, and an optional valid index filter, return a list of valid indices
@@ -598,11 +532,14 @@ def test_published_games(game_date=None, timeout=300):
         n = len(matrix)
         m = len(matrix[0])
 
+        word_start_time = time.time()
         all_paths, span_paths = get_all_words(matrix, word_list)
         all_words = [path_to_word(path, matrix) for path in all_paths]
         span_words = [path_to_word(path, matrix) for path in span_paths]
         print(f"Word paths found: {len(all_words)}")
-        print(f"Span paths found: {len(span_words)}")
+        print(
+            f"Span paths found: {len(span_words)} ({time.time() - word_start_time:.4f}s)"
+        )
 
         for row in matrix:
             print("  ".join(row))
@@ -757,10 +694,12 @@ def solve(matrix, word_list, solution_count=None, timeout=300):
 
 def __main__():
 
-    results, stats = test_published_games(game_date="2024-06-04", timeout=180)
-
     today = datetime.date.today()
-    save_results(results, f"results-{today}-1.json")
+
+    today_str = today.strftime("%Y-%m-%d")
+
+    results, stats = test_published_games(game_date=today_str, timeout=180)
+    save_results(results, f"results-{today_str}-1.json")
 
     # get average time_to_first_solution, where time_to_first_solution > 0
     time_to_first_solution_list = [
@@ -790,3 +729,7 @@ def __main__():
         word_list,
     )
     print(result)
+
+    trie = build_trie(word_list)
+
+    trie.size()

@@ -28,6 +28,15 @@ class Trie:
         node = self.search_prefix(word)
         return node is not None and node.is_end_of_word
 
+    def size(self):
+        return self._get_size_recursive(self.root)
+
+    def _get_size_recursive(self, node):
+        size = 0
+        for child in node.children.values():
+            size += self._get_size_recursive(child)
+        return size + 1
+
 
 def build_trie(word_list):
     trie = Trie()
