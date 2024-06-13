@@ -18,7 +18,11 @@ from strands.strands_helpers import (
     divide_board_into_zones_with_merge,
 )
 
-from strands.valid_matrix import init_valid_matrix, update_valid_matrix
+from strands.valid_matrix import (
+    init_valid_matrix,
+    update_valid_matrix,
+    init_valid_matrix_v2,
+)
 
 # from util.integer_trie import build_integer_trie
 

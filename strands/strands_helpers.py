@@ -2,6 +2,8 @@ from collections import defaultdict
 from .word_helpers import optimize_word_list
 from .trie import build_trie
 
+# from .paths import check_crossing_path_numpy
+
 import time
 
 # cardinal directions only
@@ -118,6 +120,7 @@ def get_all_words(matrix, word_list, verbose=False):
 
             # word path cannot cross itself
             crossing = check_crossing_path(path, [(x, y), (nx, ny)])
+            # crossing = check_crossing_path_numpy(path, [(x, y), (nx, ny)])
 
             if 0 <= nx < n and 0 <= ny < m and not visited[nx][ny] and not crossing:
                 next_char = matrix[nx][ny]
@@ -324,6 +327,7 @@ def get_connection(cluster, clusters, span_path, span_bitmask, n, m):
                 # check new node does not cross any span path
                 new_seg = [(x, y), (nx, ny)]
                 cross_span = check_crossing_path(span_path, new_seg)
+                # cross_span = check_crossing_path_numpy(span_path, new_seg)
                 overlap_span = (1 << npos) & span_bitmask
 
                 if not cluster & (1 << npos) and not overlap_span and not cross_span:

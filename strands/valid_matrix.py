@@ -1,6 +1,7 @@
 import numpy as np
 
 from .strands_helpers import path_to_word, check_crossing_path, is_trapped
+from .paths import get_crossing_matrix
 
 
 # precomputed matrix for checking valid path pairings
@@ -41,6 +42,43 @@ def init_valid_matrix(combined_bitmasks, combined_path_dict, board, min_zone_siz
             if words_i == words_j:
                 valid[i, j] = False
                 valid[j, i] = False
+
+    return valid
+
+
+# precomputed matrix for checking valid path pairings
+def init_valid_matrix_v2(combined_bitmasks, combined_path_dict, board, min_zone_size=4):
+
+    k = len(combined_bitmasks)
+
+    valid = np.ones((k, k), dtype=bool)
+    np.fill_diagonal(valid, False)
+
+    # check for overlaps and crossing
+    # triangluar matrix to reduce computation
+    for i in range(k):
+        bm_i = combined_bitmasks[i]
+        paths_i = combined_path_dict[combined_bitmasks[i]]
+        words_i = set(path_to_word(path, board) for path in paths_i)
+
+        for j in range(i + 1, k):
+            bm_j = combined_bitmasks[j]
+            paths_j = combined_path_dict[bm_j]
+            words_j = set(path_to_word(path, board) for path in paths_j)
+
+            # overlap
+            if bm_i & bm_j:
+                valid[i, j] = False
+                valid[j, i] = False
+
+            # if the sets words_i and words_j are exactly the same, then invalid
+            if words_i == words_j:
+                valid[i, j] = False
+                valid[j, i] = False
+
+    crossing_matrix = get_crossing_matrix(combined_bitmasks, combined_path_dict)
+
+    valid = np.logical_and(valid, crossing_matrix)
 
     return valid
 
