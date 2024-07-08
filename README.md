@@ -10,7 +10,7 @@ V5 (06/03/2024)
 
 [Blog post](https://www.kimyoonduk.com/blog/nyt-strands-1)
 
-[Code](/strands.py)
+[Code](/strands/strands.py)
 
 ## Connections
 
