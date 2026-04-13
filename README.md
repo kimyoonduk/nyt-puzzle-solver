@@ -11,7 +11,3 @@ V5 (06/03/2024)
 [Blog post](https://www.kimyoonduk.com/blog/nyt-strands-1)
 
 [Code](/run_strands.py)
-
-## Connections
-
-Work in progress
